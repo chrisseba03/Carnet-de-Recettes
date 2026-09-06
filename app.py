@@ -120,9 +120,11 @@ st.sidebar.subheader("📊 Répartition")
 stats_cat = {cat: 0 for cat in categories_liste}
 
 for f in fichiers_pdf:
+    nom_norm = normaliser_texte(f['name'])
     trouve = False
     for cat in categories_liste:
-        if f"[{cat}]" in f['name']:
+        cat_norm = normaliser_texte(cat)
+        if f"[{cat_norm}]" in nom_norm or cat_norm in nom_norm[:len(cat_norm)+2]:
             stats_cat[cat] += 1
             trouve = True
             break
@@ -150,16 +152,18 @@ else:
     for f in fichiers_pdf:
         nom = f['name']
         file_id = f['id']
+        nom_norm = normaliser_texte(nom)
         
         # Filtre sur les favoris
         est_favori = file_id in st.session_state.favoris
         if uniquement_favoris and not est_favori:
             continue
 
-        # Détermination de la catégorie du fichier
+        # Détermination de la catégorie du fichier (Insensible aux accents et majuscules)
         cat_du_fichier = "Autres"
         for cat in categories_liste:
-            if f"[{cat}]" in nom:
+            cat_norm = normaliser_texte(cat)
+            if f"[{cat_norm}]" in nom_norm or cat_norm in nom_norm[:len(cat_norm)+2]:
                 cat_du_fichier = cat
                 break
                 
@@ -167,15 +171,21 @@ else:
         if categorie_filtre != "Toutes" and cat_du_fichier != categorie_filtre:
             continue
             
-        # Nettoyage du titre affiché
+        # Nettoyage du titre affiché (Retire les crochets et remplace les tirets bas par des espaces)
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
         for cat in categories_liste:
-            nom_affiche = nom_affiche.replace(f"[{cat}] ", "").replace(f"[{cat}]", "")
+            # Suppression insensible aux accents du tag
+            pattern = re.compile(re.escape(f"[{cat}]"), re.IGNORECASE)
+            nom_affiche = pattern.sub("", nom_affiche)
+            pattern_acc = re.compile(re.escape(f"[{unicodedata.normalize('NFD', cat)}]"), re.IGNORECASE)
+            nom_affiche = pattern_acc.sub("", nom_affiche)
+            
+        nom_affiche = nom_affiche.replace("[Entrées]", "").replace("[ENTREES]", "").replace("[entrées]", "").strip()
+        nom_affiche = nom_affiche.replace('_', ' ').strip()
         
         nom_clean = normaliser_texte(nom_affiche)
-        nom_fichier_clean = normaliser_texte(nom)
         
-        if terme_recherche_clean and (terme_recherche_clean not in nom_clean and terme_recherche_clean not in nom_fichier_clean):
+        if terme_recherche_clean and (terme_recherche_clean not in nom_clean and terme_recherche_clean not in nom_norm):
             continue
             
         fichiers_filtrer.append((f, nom_affiche, est_favori))
