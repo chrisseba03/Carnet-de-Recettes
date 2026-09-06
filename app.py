@@ -75,11 +75,13 @@ except Exception as err:
 fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
+categories_liste = ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
+
 # --- BARRE LATÉRALE : AJOUT & FILTRES ---
 st.sidebar.header("➕ Ajouter une recette")
 nouveau_pdf = st.sidebar.file_uploader("Importer un fichier PDF", type=["pdf"])
 titre_recette = st.sidebar.text_input("Nom de la recette")
-cat_recette = st.sidebar.selectbox("Catégorie", ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"])
+cat_recette = st.sidebar.selectbox("Catégorie", categories_liste)
 
 if st.sidebar.button("Sauvegarder sur Google Drive"):
     if nouveau_pdf and titre_recette:
@@ -101,7 +103,7 @@ if st.sidebar.button("Sauvegarder sur Google Drive"):
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Options")
-categorie_filtre = st.sidebar.selectbox("Filtrer par catégorie", ["Toutes", "Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"])
+categorie_filtre = st.sidebar.selectbox("Filtrer par catégorie", ["Toutes"] + categories_liste)
 
 if st.sidebar.button("🔄 Rafraîchir la liste"):
     st.cache_data.clear()
@@ -110,14 +112,17 @@ if st.sidebar.button("🔄 Rafraîchir la liste"):
 # --- RECAPITULATIF PAR CATEGORIE DANS LA BARRE LATERALE ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("📊 Répartition")
-categories_liste = ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
 stats_cat = {cat: 0 for cat in categories_liste}
 
 for f in fichiers_pdf:
+    trouve = False
     for cat in categories_liste:
         if f"[{cat}]" in f['name']:
             stats_cat[cat] += 1
+            trouve = True
             break
+    if not trouve:
+        stats_cat["Autres"] += 1
 
 for cat, count in stats_cat.items():
     if count > 0:
@@ -133,16 +138,25 @@ if not fichiers_pdf:
 else:
     # Tri alphabétique
     fichiers_pdf = sorted(fichiers_pdf, key=lambda x: x['name'].lower())
-    recettes_affichees = 0
     terme_recherche_clean = normaliser_texte(recherche)
     
     # Pré-filtrage pour calculer combien de recettes correspondent
     fichiers_filtrer = []
     for f in fichiers_pdf:
         nom = f['name']
-        if categorie_filtre != "Toutes" and f"[{categorie_filtre}]" not in nom:
+        
+        # Détermination de la catégorie du fichier
+        cat_du_fichier = "Autres"
+        for cat in categories_liste:
+            if f"[{cat}]" in nom:
+                cat_du_fichier = cat
+                break
+                
+        # Filtre de catégorie
+        if categorie_filtre != "Toutes" and cat_du_fichier != categorie_filtre:
             continue
             
+        # Nettoyage pour le nom affiché à l'écran
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
         for cat in categories_liste:
             nom_affiche = nom_affiche.replace(f"[{cat}] ", "").replace(f"[{cat}]", "")
