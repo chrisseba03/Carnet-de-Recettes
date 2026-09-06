@@ -64,18 +64,19 @@ if st.sidebar.button("🔄 Rafraîchir la liste"):
 
 st.subheader("📚 Vos Recettes Sauvegardées")
 
-# Mise en cache de la liste pour soulager la connexion SSL
+# Récupération de TOUS les fichiers sans filtrer uniquement sur le type PDF
 @st.cache_data(ttl=600)
 def get_all_recipes():
     fichiers = []
     page_token = None
-    query = f"'{FOLDER_ID}' in parents and trashed = false and mimeType = 'application/pdf'"
+    # Recherche de TOUS les éléments dans le dossier (hors corbeille)
+    query = f"'{FOLDER_ID}' in parents and trashed = false"
     
     while True:
         response = drive_service.files().list(
             q=query,
-            fields="nextPageToken, files(id, name)",
-            pageSize=100,
+            fields="nextPageToken, files(id, name, mimeType)",
+            pageSize=1000,
             pageToken=page_token
         ).execute()
         
@@ -96,11 +97,13 @@ except Exception as err:
 if not fichiers:
     st.info("Aucune recette trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
 else:
+    st.write(f"📊 **Nombre total d'éléments détectés dans le dossier : {len(fichiers)}**")
     fichiers = sorted(fichiers, key=lambda x: x['name'].lower())
     
     for f in fichiers:
         nom = f['name']
         file_id = f['id']
+        mime = f.get('mimeType', '')
         
         if categorie_filtre != "Toutes" and f"[{categorie_filtre}]" not in nom:
             continue
@@ -108,19 +111,18 @@ else:
             continue
 
         with st.expander(f"📖 {nom.replace('.pdf', '')}"):
-            # Téléchargement à la demande uniquement lorsque l'utilisateur clique
+            st.caption(f"Type de fichier : `{mime}`")
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
             headers = {"Authorization": f"Bearer {creds.token}"}
             
-            if st.button(f"📥 Charger / Télécharger le PDF", key=file_id):
+            if st.button(f"📥 Charger / Télécharger le fichier", key=file_id):
                 with st.spinner("Téléchargement du fichier..."):
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
                         st.download_button(
-                            label="💾 Enregistrer le fichier PDF",
+                            label="💾 Enregistrer le fichier",
                             data=res.content,
                             file_name=nom,
-                            mime="application/pdf",
                             key=f"dl_{file_id}"
                         )
                     else:
