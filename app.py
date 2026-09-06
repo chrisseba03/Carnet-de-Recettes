@@ -69,7 +69,10 @@ st.subheader("📚 Vos Recettes Sauvegardées")
 def get_all_recipes():
     fichiers = []
     page_token = None
-    query = f"'{FOLDER_ID}' in parents and trashed = false"
+    
+    # REQUÊTE DRIVE : On demande uniquement les fichiers non mis à la corbeille 
+    # et ayant le type MIME 'application/pdf'
+    query = f"'{FOLDER_ID}' in parents and trashed = false and mimeType = 'application/pdf'"
     
     while True:
         response = drive_service.files().list(
@@ -93,17 +96,20 @@ except Exception as err:
     st.error("Petite baisse de réseau avec Google Drive. Cliquez sur 'Rafraîchir la liste' dans le menu de gauche.")
     st.stop()
 
-if not fichiers:
-    st.info("Aucune recette trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
+# Sécurité supplémentaire : filtrer aussi par l'extension .pdf au cas où
+fichiers_pdf = [f for f in fichiers if f['name'].lower().endswith('.pdf')]
+
+if not fichiers_pdf:
+    st.info("Aucune recette au format PDF trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
 else:
-    # Tri alphabétique des fichiers
-    fichiers = sorted(fichiers, key=lambda x: x['name'].lower())
+    # Tri alphabétique des fichiers PDF
+    fichiers_pdf = sorted(fichiers_pdf, key=lambda x: x['name'].lower())
     recettes_affichees = 0
     
     # Nettoyage du terme de recherche
     terme_recherche = recherche.strip().lower()
     
-    for f in fichiers:
+    for f in fichiers_pdf:
         nom = f['name']
         file_id = f['id']
         
@@ -112,11 +118,11 @@ else:
             continue
             
         # Nom propre lisible (ex: "Tarte aux pommes")
-        nom_affiche = nom.replace('.pdf', '')
+        nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
         for cat in ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]:
             nom_affiche = nom_affiche.replace(f"[{cat}] ", "").replace(f"[{cat}]", "")
         
-        # 2. Filtre par recherche texte (sur le nom complet et sur le nom propre)
+        # 2. Filtre par recherche texte
         if terme_recherche and (terme_recherche not in nom.lower() and terme_recherche not in nom_affiche.lower()):
             continue
 
@@ -152,4 +158,4 @@ else:
                         st.error("Erreur lors de la récupération de la recette.")
 
     if recettes_affichees == 0:
-        st.warning("Aucune recette ne correspond à votre recherche.")
+        st.warning("Aucune recette PDF ne correspond à votre recherche.")
