@@ -12,12 +12,9 @@ import google.auth.transport.requests
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
 st.title("🍳 Le Carnet de Recettes de la Maison")
 
-# Initialisation du stockage des favoris et des cases cochées dans la session
+# Initialisation du stockage des favoris dans la session utilisateur
 if "favoris" not in st.session_state:
     st.session_state.favoris = set()
-
-if "cochages" not in st.session_state:
-    st.session_state.cochages = {}
 
 # Fonction pour normaliser le texte (supprime les accents, gère œ/æ et casse)
 def normaliser_texte(texte):
@@ -226,33 +223,9 @@ else:
                     if res.status_code == 200:
                         try:
                             pdf_file = pdfium.PdfDocument(res.content)
-                            
-                            # Affichage des images de chaque page PDF
                             for page_index in range(len(pdf_file)):
                                 image = pdf_file[page_index].render(scale=2).to_pil()
                                 st.image(image, use_container_width=True)
-                            
-                            # Extraction du texte pour créer la liste d'ingrédients à cocher
-                            st.markdown("---")
-                            st.markdown("### 📝 Suivi de la préparation & Ingrédients")
-                            
-                            lignes_texte = []
-                            for page_index in range(len(pdf_file)):
-                                textpage = pdf_file[page_index].get_textpage()
-                                texte_page = textpage.get_text_range()
-                                for ligne in texte_page.split("\n"):
-                                    ligne_propre = ligne.strip()
-                                    if len(ligne_propre) > 2:  # Évite les lignes vides
-                                        lignes_texte.append(ligne_propre)
-
-                            if lignes_texte:
-                                st.caption("Cochez les éléments au fur et à mesure de votre recette :")
-                                for idx_ligne, ligne in enumerate(lignes_texte):
-                                    cle_cochage = f"check_{file_id}_{idx_ligne}"
-                                    st.checkbox(ligne, key=cle_cochage)
-                            else:
-                                st.info("Le texte de ce PDF n'a pas pu être extrait automatiquement sous forme de cases (recette numérisée sous forme d'image).")
-
                         except Exception as e:
                             st.error("Impossible d'afficher l'aperçu du PDF.")
 
