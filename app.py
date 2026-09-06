@@ -16,13 +16,9 @@ st.title("🍳 Le Carnet de Recettes de la Maison")
 def normaliser_texte(texte):
     if not texte:
         return ""
-    # Remplace les ligatures courantes
     texte = texte.replace("œ", "oe").replace("Œ", "oe").replace("æ", "ae").replace("Æ", "ae")
-    # Décompose les caractères accentués
     texte = unicodedata.normalize('NFD', texte)
-    # Supprime tous les diacritiques (accents)
     texte = "".join(c for c in texte if unicodedata.category(c) != 'Mn')
-    # Passe en minuscules et ne garde que les lettres et chiffres
     texte = texte.lower()
     texte = re.sub(r'[^a-z0-9]', '', texte)
     return texte
@@ -45,6 +41,39 @@ try:
 except Exception as e:
     st.error("Erreur de connexion à Google Drive. Vérifiez la configuration des Secrets.")
     st.stop()
+
+# --- RECUPERATION DE TOUTES LES RECETTES ---
+@st.cache_data(ttl=600)
+def get_all_recipes():
+    fichiers = []
+    page_token = None
+    query = f"'{FOLDER_ID}' in parents and trashed = false and mimeType = 'application/pdf'"
+    
+    while True:
+        response = drive_service.files().list(
+            q=query,
+            fields="nextPageToken, files(id, name, mimeType)",
+            pageSize=1000,
+            pageToken=page_token
+        ).execute()
+        
+        fichiers.extend(response.get('files', []))
+        page_token = response.get('nextPageToken', None)
+        
+        if page_token is None:
+            break
+            
+    return fichiers
+
+try:
+    fichiers_bruts = get_all_recipes()
+except Exception as err:
+    st.error("Petite baisse de réseau avec Google Drive. Cliquez sur 'Rafraîchir la liste' dans le menu de gauche.")
+    st.stop()
+
+# Filtre strict sur l'extension PDF
+fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
+total_recettes = len(fichiers_pdf)
 
 # --- BARRE LATÉRALE : AJOUT & FILTRES ---
 st.sidebar.header("➕ Ajouter une recette")
@@ -78,45 +107,26 @@ if st.sidebar.button("🔄 Rafraîchir la liste"):
     st.cache_data.clear()
     st.rerun()
 
-# --- RECHERCHE EN HAUT DE LA PAGE PRINCIPALE ---
+# --- RECAPITULATIF PAR CATEGORIE DANS LA BARRE LATERALE ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("📊 Répartition")
+categories_liste = ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
+stats_cat = {cat: 0 for cat in categories_liste}
+
+for f in fichiers_pdf:
+    for cat in categories_liste:
+        if f"[{cat}]" in f['name']:
+            stats_cat[cat] += 1
+            break
+
+for cat, count in stats_cat.items():
+    if count > 0:
+        st.sidebar.text(f"• {cat} : {count}")
+
+# --- RECHERCHE ET AFFICHAGE PRINCIPAL ---
 st.markdown("---")
 recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: crepe, gateau, oeuf, poulet...)")
 st.markdown("---")
-
-st.subheader("📚 Vos Recettes Sauvegardées")
-
-@st.cache_data(ttl=600)
-def get_all_recipes():
-    fichiers = []
-    page_token = None
-    
-    # Requête pour ne récupérer que les fichiers PDF non mis à la corbeille
-    query = f"'{FOLDER_ID}' in parents and trashed = false and mimeType = 'application/pdf'"
-    
-    while True:
-        response = drive_service.files().list(
-            q=query,
-            fields="nextPageToken, files(id, name, mimeType)",
-            pageSize=1000,
-            pageToken=page_token
-        ).execute()
-        
-        fichiers.extend(response.get('files', []))
-        page_token = response.get('nextPageToken', None)
-        
-        if page_token is None:
-            break
-            
-    return fichiers
-
-try:
-    fichiers = get_all_recipes()
-except Exception as err:
-    st.error("Petite baisse de réseau avec Google Drive. Cliquez sur 'Rafraîchir la liste' dans le menu de gauche.")
-    st.stop()
-
-# Sécurité supplémentaire : filtrer par l'extension .pdf
-fichiers_pdf = [f for f in fichiers if f['name'].lower().endswith('.pdf')]
 
 if not fichiers_pdf:
     st.info("Aucune recette au format PDF trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
@@ -124,33 +134,38 @@ else:
     # Tri alphabétique
     fichiers_pdf = sorted(fichiers_pdf, key=lambda x: x['name'].lower())
     recettes_affichees = 0
-    
-    # Normalisation de la recherche de l'utilisateur
     terme_recherche_clean = normaliser_texte(recherche)
     
+    # Pré-filtrage pour calculer combien de recettes correspondent
+    fichiers_filtrer = []
     for f in fichiers_pdf:
         nom = f['name']
-        file_id = f['id']
-        
-        # 1. Filtre par catégorie
         if categorie_filtre != "Toutes" and f"[{categorie_filtre}]" not in nom:
             continue
             
-        # Nom propre lisible pour l'affichage (ex: "Tarte aux pommes")
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
-        for cat in ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]:
+        for cat in categories_liste:
             nom_affiche = nom_affiche.replace(f"[{cat}] ", "").replace(f"[{cat}]", "")
         
-        # Normalisation du nom de la recette
         nom_clean = normaliser_texte(nom_affiche)
         nom_fichier_clean = normaliser_texte(nom)
         
-        # 2. Filtre par recherche tolérante (sans accents, sans ligature œ)
         if terme_recherche_clean and (terme_recherche_clean not in nom_clean and terme_recherche_clean not in nom_fichier_clean):
             continue
+            
+        fichiers_filtrer.append((f, nom_affiche))
 
-        recettes_affichees += 1
-        
+    # Affichage du titre avec le compteur adapté
+    nb_resultats = len(fichiers_filtrer)
+    if categorie_filtre != "Toutes" or terme_recherche_clean:
+        st.subheader(f"📚 Recettes correspondantes ({nb_resultats} / {total_recettes})")
+    else:
+        st.subheader(f"📚 Toutes vos recettes ({total_recettes})")
+
+    for f, nom_affiche in fichiers_filtrer:
+        nom = f['name']
+        file_id = f['id']
+
         with st.expander(f"📖 {nom_affiche}"):
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
             headers = {"Authorization": f"Bearer {creds.token}"}
@@ -160,7 +175,6 @@ else:
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
                         try:
-                            # Conversion des pages du PDF en images
                             pdf_file = pdfium.PdfDocument(res.content)
                             for page_index in range(len(pdf_file)):
                                 page = pdf_file[page_index]
@@ -180,5 +194,5 @@ else:
                     else:
                         st.error("Erreur lors de la récupération de la recette.")
 
-    if recettes_affichees == 0:
+    if nb_resultats == 0:
         st.warning("Aucune recette PDF ne correspond à votre recherche.")
