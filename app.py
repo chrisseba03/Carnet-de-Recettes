@@ -29,7 +29,7 @@ except Exception as e:
     st.error("Erreur de connexion à Google Drive. Vérifiez la configuration des Secrets.")
     st.stop()
 
-# --- BARRE LATÉRALE : AJOUT DE RECETTE ---
+# --- BARRE LATÉRALE : AJOUT & FILTRES ---
 st.sidebar.header("➕ Ajouter une recette")
 nouveau_pdf = st.sidebar.file_uploader("Importer un fichier PDF", type=["pdf"])
 titre_recette = st.sidebar.text_input("Nom de la recette")
@@ -53,15 +53,18 @@ if st.sidebar.button("Sauvegarder sur Google Drive"):
     else:
         st.sidebar.error("Veuillez renseigner le titre et choisir un fichier PDF.")
 
-# --- AFFICHAGE ET RECHERCHE DES RECETTES ---
 st.sidebar.markdown("---")
-st.sidebar.header("🔍 Recherche & Filtres")
+st.sidebar.header("⚙️ Options")
 categorie_filtre = st.sidebar.selectbox("Filtrer par catégorie", ["Toutes", "Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"])
-recherche = st.sidebar.text_input("Rechercher par mot-clé")
 
 if st.sidebar.button("🔄 Rafraîchir la liste"):
     st.cache_data.clear()
     st.rerun()
+
+# --- RECHERCHE EN HAUT DE LA PAGE PRINCIPALE ---
+st.markdown("---")
+recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: Tartiflette, Poulet, Tarte...)")
+st.markdown("---")
 
 st.subheader("📚 Vos Recettes Sauvegardées")
 
@@ -70,8 +73,7 @@ def get_all_recipes():
     fichiers = []
     page_token = None
     
-    # REQUÊTE DRIVE : On demande uniquement les fichiers non mis à la corbeille 
-    # et ayant le type MIME 'application/pdf'
+    # Requête pour ne récupérer que les fichiers PDF non mis à la corbeille
     query = f"'{FOLDER_ID}' in parents and trashed = false and mimeType = 'application/pdf'"
     
     while True:
@@ -96,13 +98,13 @@ except Exception as err:
     st.error("Petite baisse de réseau avec Google Drive. Cliquez sur 'Rafraîchir la liste' dans le menu de gauche.")
     st.stop()
 
-# Sécurité supplémentaire : filtrer aussi par l'extension .pdf au cas où
+# Sécurité supplémentaire : filtrer par l'extension .pdf
 fichiers_pdf = [f for f in fichiers if f['name'].lower().endswith('.pdf')]
 
 if not fichiers_pdf:
     st.info("Aucune recette au format PDF trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
 else:
-    # Tri alphabétique des fichiers PDF
+    # Tri alphabétique
     fichiers_pdf = sorted(fichiers_pdf, key=lambda x: x['name'].lower())
     recettes_affichees = 0
     
@@ -113,7 +115,7 @@ else:
         nom = f['name']
         file_id = f['id']
         
-        # 1. Filtre par catégorie
+        # 1. Filtre par catégorie (depuis le menu latéral)
         if categorie_filtre != "Toutes" and f"[{categorie_filtre}]" not in nom:
             continue
             
@@ -122,7 +124,7 @@ else:
         for cat in ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]:
             nom_affiche = nom_affiche.replace(f"[{cat}] ", "").replace(f"[{cat}]", "")
         
-        # 2. Filtre par recherche texte
+        # 2. Filtre par recherche texte (champ du haut)
         if terme_recherche and (terme_recherche not in nom.lower() and terme_recherche not in nom_affiche.lower()):
             continue
 
@@ -137,7 +139,7 @@ else:
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
                         try:
-                            # Conversion instantanée des pages du PDF en images
+                            # Conversion des pages du PDF en images
                             pdf_file = pdfium.PdfDocument(res.content)
                             for page_index in range(len(pdf_file)):
                                 page = pdf_file[page_index]
