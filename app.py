@@ -1,23 +1,28 @@
 import streamlit as st
 import io
+import requests
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseUpload
+import google.auth.transport.requests
 
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
 st.title("🍳 Le Carnet de Recettes de la Maison")
 
-# Authentification Google Drive via Streamlit Secrets
+# Client d'authentification optimisé avec `requests`
 @st.cache_resource
 def get_drive_service():
     creds = service_account.Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
         scopes=['https://www.googleapis.com/auth/drive']
     )
-    return build('drive', 'v3', credentials=creds)
+    session = requests.Session()
+    auth_request = google.auth.transport.requests.Request(session=session)
+    creds.refresh(auth_request)
+    return build('drive', 'v3', credentials=creds), creds
 
 try:
-    drive_service = get_drive_service()
+    drive_service, creds = get_drive_service()
     FOLDER_ID = st.secrets["FOLDER_ID"]
 except Exception as e:
     st.error("Erreur de connexion à Google Drive. Vérifiez la configuration des Secrets.")
@@ -42,6 +47,7 @@ if st.sidebar.button("Sauvegarder sur Google Drive"):
             drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
         
         st.sidebar.success(f"Recette '{titre_recette}' sauvegardée avec succès !")
+        st.cache_data.clear()
         st.rerun()
     else:
         st.sidebar.error("Veuillez renseigner le titre et choisir un fichier PDF.")
@@ -52,9 +58,14 @@ st.sidebar.header("🔍 Recherche & Filtres")
 categorie_filtre = st.sidebar.selectbox("Filtrer par catégorie", ["Toutes", "Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"])
 recherche = st.sidebar.text_input("Rechercher par mot-clé")
 
+if st.sidebar.button("🔄 Rafraîchir la liste"):
+    st.cache_data.clear()
+    st.rerun()
+
 st.subheader("📚 Vos Recettes Sauvegardées")
 
-# Fonction pour récupérer l'intégralité des fichiers (gestion de la pagination)
+# Mise en cache de la liste pour soulager la connexion SSL
+@st.cache_data(ttl=600)
 def get_all_recipes():
     fichiers = []
     page_token = None
@@ -76,37 +87,41 @@ def get_all_recipes():
             
     return fichiers
 
-fichiers = get_all_recipes()
+try:
+    fichiers = get_all_recipes()
+except Exception as err:
+    st.error("Petite baisse de réseau avec Google Drive. Cliquez sur 'Rafraîchir la liste' dans le menu de gauche.")
+    st.stop()
 
 if not fichiers:
     st.info("Aucune recette trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
 else:
-    # Tri par ordre alphabétique
     fichiers = sorted(fichiers, key=lambda x: x['name'].lower())
     
     for f in fichiers:
         nom = f['name']
         file_id = f['id']
         
-        # Filtrage par catégorie et recherche
         if categorie_filtre != "Toutes" and f"[{categorie_filtre}]" not in nom:
             continue
         if recherche and recherche.lower() not in nom.lower():
             continue
 
         with st.expander(f"📖 {nom.replace('.pdf', '')}"):
-            request = drive_service.files().get_media(fileId=file_id)
-            fh = io.BytesIO()
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done:
-                status, done = downloader.next_chunk()
+            # Téléchargement à la demande uniquement lorsque l'utilisateur clique
+            download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+            headers = {"Authorization": f"Bearer {creds.token}"}
             
-            pdf_bytes = fh.getvalue()
-            
-            st.download_button(
-                label="📥 Ouvrir / Télécharger le PDF",
-                data=pdf_bytes,
-                file_name=nom,
-                mime="application/pdf"
-            )
+            if st.button(f"📥 Charger / Télécharger le PDF", key=file_id):
+                with st.spinner("Téléchargement du fichier..."):
+                    res = requests.get(download_url, headers=headers)
+                    if res.status_code == 200:
+                        st.download_button(
+                            label="💾 Enregistrer le fichier PDF",
+                            data=res.content,
+                            file_name=nom,
+                            mime="application/pdf",
+                            key=f"dl_{file_id}"
+                        )
+                    else:
+                        st.error("Erreur lors de la récupération du fichier.")
