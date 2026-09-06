@@ -1,5 +1,6 @@
 import streamlit as st
 import io
+import base64
 import requests
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -64,12 +65,10 @@ if st.sidebar.button("🔄 Rafraîchir la liste"):
 
 st.subheader("📚 Vos Recettes Sauvegardées")
 
-# Récupération de TOUS les fichiers sans filtrer uniquement sur le type PDF
 @st.cache_data(ttl=600)
 def get_all_recipes():
     fichiers = []
     page_token = None
-    # Recherche de TOUS les éléments dans le dossier (hors corbeille)
     query = f"'{FOLDER_ID}' in parents and trashed = false"
     
     while True:
@@ -97,7 +96,6 @@ except Exception as err:
 if not fichiers:
     st.info("Aucune recette trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
 else:
-    st.write(f"📊 **Nombre total d'éléments détectés dans le dossier : {len(fichiers)}**")
     fichiers = sorted(fichiers, key=lambda x: x['name'].lower())
     
     for f in fichiers:
@@ -110,19 +108,31 @@ else:
         if recherche and recherche.lower() not in nom.lower():
             continue
 
-        with st.expander(f"📖 {nom.replace('.pdf', '')}"):
-            st.caption(f"Type de fichier : `{mime}`")
+        nom_affiche = nom.replace('.pdf', '')
+        
+        with st.expander(f"📖 {nom_affiche}"):
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
             headers = {"Authorization": f"Bearer {creds.token}"}
             
-            if st.button(f"📥 Charger / Télécharger le fichier", key=file_id):
-                with st.spinner("Téléchargement du fichier..."):
+            # Bouton pour afficher la recette à l'écran
+            if st.button(f"👁️ Afficher la recette", key=f"view_{file_id}"):
+                with st.spinner("Chargement de la recette..."):
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
+                        # Si c'est un PDF, on l'affiche directement dans un lecteur intégré
+                        if "pdf" in mime or nom.endswith(".pdf"):
+                            base64_pdf = base64.b64encode(res.content).decode('utf-8')
+                            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="700" type="application/pdf"></iframe>'
+                            st.markdown(pdf_display, unsafe_allow_html=True)
+                        else:
+                            st.info("Ce fichier n'est pas un PDF. Vous pouvez le télécharger ci-dessous.")
+
+                        # Bouton optionnel de téléchargement en dessous au besoin
                         st.download_button(
-                            label="💾 Enregistrer le fichier",
+                            label="💾 Télécharger le fichier PDF sur l'appareil",
                             data=res.content,
                             file_name=nom,
+                            mime="application/pdf",
                             key=f"dl_{file_id}"
                         )
                     else:
