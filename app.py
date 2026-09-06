@@ -9,10 +9,55 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 import google.auth.transport.requests
 
-st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
-st.title("🍳 Le Carnet de Recettes de la Maison")
+# Configuration de la page
+st.set_page_config(
+    page_title="Le Carnet de Recettes de la Maison",
+    page_icon="🍳",
+    layout="wide",
+    initial_sidebar_state="collapsed"  # Masque le menu par défaut pour gagner de la place sur mobile
+)
 
-# Initialisation du stockage des favoris dans la session utilisateur
+# Style CSS personnalisé pour l'optimisation mobile et les cartes
+st.markdown("""
+<style>
+    /* Amélioration du style global */
+    .stApp {
+        background-color: #faf8f5;
+    }
+    
+    /* Titre principal chaleureux */
+    .main-title {
+        color: #2c3e50;
+        font-size: 2rem;
+        font-weight: 700;
+        text-align: center;
+        margin-bottom: 0.5rem;
+    }
+    
+    /* Cartes de recettes */
+    div[data-testid="stVerticalBlock"] > div.recipe-card {
+        background-color: #ffffff;
+        border-radius: 12px;
+        padding: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border: 1px solid #eef0f2;
+        margin-bottom: 10px;
+    }
+    
+    /* Boutons adaptés au tactile sur mobile */
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: 600;
+        width: 100%;
+        padding-top: 8px;
+        padding-bottom: 8px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<h1 class="main-title">🍳 Le Carnet de Recettes de la Maison</h1>', unsafe_allow_html=True)
+
+# Initialisation des favoris
 if "favoris" not in st.session_state:
     st.session_state.favoris = set()
 
@@ -27,7 +72,7 @@ def normaliser_texte(texte):
     texte = re.sub(r'[^a-z0-9]', '', texte)
     return texte
 
-# Client d'authentification
+# Client d'authentification Google Drive
 @st.cache_resource
 def get_drive_service():
     creds = service_account.Credentials.from_service_account_info(
@@ -72,7 +117,7 @@ def get_all_recipes():
 try:
     fichiers_bruts = get_all_recipes()
 except Exception as err:
-    st.error("Petite baisse de réseau avec Google Drive. Cliquez sur 'Rafraîchir la liste' dans le menu de gauche.")
+    st.error("Petite baisse de réseau avec Google Drive. Utilisez le bouton 'Rafraîchir' dans le menu latéral.")
     st.stop()
 
 # Filtre strict sur l'extension PDF
@@ -81,13 +126,13 @@ total_recettes = len(fichiers_pdf)
 
 categories_liste = ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
 
-# --- BARRE LATÉRALE : AJOUT & FILTRES ---
+# --- BARRE LATÉRALE : AJOUT ET RECAP ---
 st.sidebar.header("➕ Ajouter une recette")
 nouveau_pdf = st.sidebar.file_uploader("Importer un fichier PDF", type=["pdf"])
 titre_recette = st.sidebar.text_input("Nom de la recette")
 cat_recette = st.sidebar.selectbox("Catégorie", categories_liste)
 
-if st.sidebar.button("Sauvegarder sur Google Drive"):
+if st.sidebar.button("💾 Sauvegarder sur Google Drive"):
     if nouveau_pdf and titre_recette:
         nom_fichier = f"[{cat_recette}] {titre_recette.strip()}.pdf"
         file_metadata = {
@@ -107,14 +152,12 @@ if st.sidebar.button("Sauvegarder sur Google Drive"):
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Options")
-categorie_filtre = st.sidebar.selectbox("Filtrer par catégorie", ["Toutes"] + categories_liste)
-uniquement_favoris = st.sidebar.checkbox("⭐ Afficher uniquement mes Coups de cœur", value=False)
 
 if st.sidebar.button("🔄 Rafraîchir la liste"):
     st.cache_data.clear()
     st.rerun()
 
-# --- RECAPITULATIF PAR CATEGORIE DANS LA BARRE LATERALE ---
+# Récapitulatif par catégorie dans le menu latéral
 st.sidebar.markdown("---")
 st.sidebar.subheader("📊 Répartition")
 stats_cat = {cat: 0 for cat in categories_liste}
@@ -135,39 +178,43 @@ for cat, count in stats_cat.items():
 
 st.sidebar.text(f"• ⭐ Coups de cœur : {len(st.session_state.favoris)}")
 
-# --- RECHERCHE ET AFFICHAGE PRINCIPAL ---
-st.markdown("---")
-recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: crepe, gateau, oeuf, poulet...)")
-st.markdown("---")
+# --- BARRE DE RECHERCHE PRINCIPALE ---
+recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: crepe, gateau, poulet...)", label_visibility="collapsed")
 
-if not fichiers_pdf:
-    st.info("Aucune recette au format PDF trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
-else:
+# --- NAVIGATION PAR ONGLETS (TABS) POUR MOBILES ---
+onglets = st.tabs([
+    f"📚 Toutes ({total_recettes})",
+    f"⭐ Favoris ({len(st.session_state.favoris)})",
+    f"🥗 Entrées ({stats_cat['Entrées']})",
+    f"🍲 Plats ({stats_cat['Plats']})",
+    f"🍰 Desserts ({stats_cat['Desserts']})",
+    f"🥖 Pains ({stats_cat['Pains & Pâtisseries']})",
+    f"📦 Autres ({stats_cat['Autres']})"
+])
+
+# Fonction d'affichage des cartes de recettes
+def afficher_grille_recettes(liste_fichiers, filtre_categorie=None, uniquement_favoris=False):
     terme_recherche_clean = normaliser_texte(recherche)
     
-    # Pré-filtrage des recettes
+    # Pre-filtrage
     fichiers_filtrer = []
-    for f in fichiers_pdf:
+    for f in liste_fichiers:
         nom = f['name']
         file_id = f['id']
         
-        # Filtre sur les favoris
         est_favori = file_id in st.session_state.favoris
         if uniquement_favoris and not est_favori:
             continue
 
-        # Détermination de la catégorie du fichier
         cat_du_fichier = "Autres"
         for cat in categories_liste:
             if f"[{cat}]" in nom:
                 cat_du_fichier = cat
                 break
                 
-        # Filtre de catégorie
-        if categorie_filtre != "Toutes" and cat_du_fichier != categorie_filtre:
+        if filtre_categorie and cat_du_fichier != filtre_categorie:
             continue
             
-        # Nettoyage du titre affiché
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
         for cat in categories_liste:
             nom_affiche = nom_affiche.replace(f"[{cat}] ", "").replace(f"[{cat}]", "")
@@ -178,68 +225,94 @@ else:
         if terme_recherche_clean and (terme_recherche_clean not in nom_clean and terme_recherche_clean not in nom_fichier_clean):
             continue
             
-        fichiers_filtrer.append((f, nom_affiche, est_favori))
+        fichiers_filtrer.append((f, nom_affiche, est_favori, cat_du_fichier))
 
-    # Tri : Les favoris s'affichent TOUJOURS en premier, puis ordre alphabétique
+    # Tri : Les favoris en premier, puis alphabétique
     fichiers_filtrer = sorted(fichiers_filtrer, key=lambda x: (not x[2], x[1].lower()))
 
-    # Affichage du titre et des sous-titres
-    nb_resultats = len(fichiers_filtrer)
-    if uniquement_favoris:
-        st.subheader(f"⭐ Vos recettes coup de cœur ({nb_resultats})")
-    elif categorie_filtre != "Toutes" or terme_recherche_clean:
-        st.subheader(f"📚 Recettes correspondantes ({nb_resultats} / {total_recettes})")
-    else:
-        st.subheader(f"📚 Toutes vos recettes ({total_recettes})")
+    if not fichiers_filtrer:
+        st.info("Aucune recette ne correspond à votre sélection.")
+        return
 
-    # Affichage de chaque recette
-    for f, nom_affiche, est_favori in fichiers_filtrer:
-        nom = f['name']
-        file_id = f['id']
-
-        # Préfixe avec étoile si favori
-        titre_accordéon = f"⭐ {nom_affiche}" if est_favori else f"📖 {nom_affiche}"
-
-        with st.expander(titre_accordéon):
-            col_fav, col_actions = st.columns([1, 4])
+    # Grille responsive : 2 colonnes sur tablette/PC, s'adapte très bien au smartphone
+    cols = st.columns(2)
+    
+    for idx, (f, nom_affiche, est_favori, cat_du_fichier) in enumerate(fichiers_filtrer):
+        col = cols[idx % 2]
+        
+        with col:
+            # Carte de la recette
+            st.markdown('<div class="recipe-card">', unsafe_allow_html=True)
             
-            # Gestion du bouton favori
-            with col_fav:
+            # Badge de catégorie & titre
+            icone_fav = "⭐ " if est_favori else ""
+            st.markdown(f"### {icone_fav}{nom_affiche}")
+            st.caption(f"📁 **Catégorie :** {cat_du_fichier}")
+            
+            # Boutons d'action rapides
+            col_b1, col_b2 = st.columns([1, 1])
+            
+            with col_b1:
+                # Bouton Favori toggle
                 if est_favori:
-                    if st.button("❌ Retirer des favoris", key=f"fav_del_{file_id}"):
-                        st.session_state.favoris.remove(file_id)
+                    if st.button("❌ Retirer", key=f"fav_del_{f['id']}"):
+                        st.session_state.favoris.remove(f['id'])
                         st.rerun()
                 else:
-                    if st.button("⭐ Ajouter aux favoris", key=f"fav_add_{file_id}"):
-                        st.session_state.favoris.add(file_id)
+                    if st.button("⭐ Favori", key=f"fav_add_{f['id']}"):
+                        st.session_state.favoris.add(f['id'])
                         st.rerun()
+                        
+            with col_b2:
+                # Bouton/Accordéon d'ouverture du PDF
+                bouton_voir = st.checkbox("👁️ Aperçu", key=f"check_view_{f['id']}")
 
-            download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
-            headers = {"Authorization": f"Bearer {creds.token}"}
-            
-            if st.button(f"👁️ Afficher la recette", key=f"view_{file_id}"):
-                with st.spinner("Chargement et affichage des pages..."):
+            if bouton_voir:
+                download_url = f"https://www.googleapis.com/drive/v3/files/{f['id']}?alt=media"
+                headers = {"Authorization": f"Bearer {creds.token}"}
+                
+                with st.spinner("Chargement de la recette..."):
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
                         try:
                             pdf_file = pdfium.PdfDocument(res.content)
                             for page_index in range(len(pdf_file)):
-                                page = page_index
-                                image = pdf_file[page_index].render(scale=2).to_pil()
+                                page = pdf_file[page_index]
+                                image = page.render(scale=2).to_pil()
                                 st.image(image, use_container_width=True)
                         except Exception as e:
                             st.error("Impossible d'afficher l'aperçu du PDF.")
 
-                        st.markdown("---")
                         st.download_button(
-                            label="💾 Télécharger le fichier PDF",
+                            label="💾 Télécharger PDF",
                             data=res.content,
-                            file_name=nom,
+                            file_name=f['name'],
                             mime="application/pdf",
-                            key=f"dl_{file_id}"
+                            key=f"dl_{f['id']}"
                         )
                     else:
                         st.error("Erreur lors de la récupération de la recette.")
+                        
+            st.markdown('</div>', unsafe_allow_html=True)
 
-    if nb_resultats == 0:
-        st.warning("Aucune recette ne correspond à votre sélection.")
+# REMPLISSAGE DE CHAQUE ONGLET
+with onglets[0]:
+    afficher_grille_recettes(fichiers_pdf)
+
+with onglets[1]:
+    afficher_grille_recettes(fichiers_pdf, uniquement_favoris=True)
+
+with onglets[2]:
+    afficher_grille_recettes(fichiers_pdf, filtre_categorie="Entrées")
+
+with onglets[3]:
+    afficher_grille_recettes(fichiers_pdf, filtre_categorie="Plats")
+
+with onglets[4]:
+    afficher_grille_recettes(fichiers_pdf, filtre_categorie="Desserts")
+
+with onglets[5]:
+    afficher_grille_recettes(fichiers_pdf, filtre_categorie="Pains & Pâtisseries")
+
+with onglets[6]:
+    afficher_grille_recettes(fichiers_pdf, filtre_categorie="Autres")
