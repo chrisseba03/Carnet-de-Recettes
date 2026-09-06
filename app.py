@@ -37,7 +37,7 @@ cat_recette = st.sidebar.selectbox("Catégorie", ["Entrées", "Plats", "Desserts
 
 if st.sidebar.button("Sauvegarder sur Google Drive"):
     if nouveau_pdf and titre_recette:
-        nom_fichier = f"[{cat_recette}] {titre_recette}.pdf"
+        nom_fichier = f"[{cat_recette}] {titre_recette.strip()}.pdf"
         file_metadata = {
             'name': nom_fichier,
             'parents': [FOLDER_ID]
@@ -96,18 +96,31 @@ except Exception as err:
 if not fichiers:
     st.info("Aucune recette trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
 else:
+    # Tri alphabétique des fichiers
     fichiers = sorted(fichiers, key=lambda x: x['name'].lower())
+    recettes_affichees = 0
+    
+    # Nettoyage du terme de recherche
+    terme_recherche = recherche.strip().lower()
     
     for f in fichiers:
         nom = f['name']
         file_id = f['id']
         
+        # 1. Filtre par catégorie
         if categorie_filtre != "Toutes" and f"[{categorie_filtre}]" not in nom:
             continue
-        if recherche and recherche.lower() not in nom.lower():
+            
+        # Nom propre lisible (ex: "Tarte aux pommes")
+        nom_affiche = nom.replace('.pdf', '')
+        for cat in ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]:
+            nom_affiche = nom_affiche.replace(f"[{cat}] ", "").replace(f"[{cat}]", "")
+        
+        # 2. Filtre par recherche texte (sur le nom complet et sur le nom propre)
+        if terme_recherche and (terme_recherche not in nom.lower() and terme_recherche not in nom_affiche.lower()):
             continue
 
-        nom_affiche = nom.replace('.pdf', '')
+        recettes_affichees += 1
         
         with st.expander(f"📖 {nom_affiche}"):
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
@@ -137,3 +150,6 @@ else:
                         )
                     else:
                         st.error("Erreur lors de la récupération de la recette.")
+
+    if recettes_affichees == 0:
+        st.warning("Aucune recette ne correspond à votre recherche.")
