@@ -54,14 +54,36 @@ recherche = st.sidebar.text_input("Rechercher par mot-clé")
 
 st.subheader("📚 Vos Recettes Sauvegardées")
 
-# Récupération des fichiers depuis Google Drive
-query = f"'{FOLDER_ID}' in parents and trashed = false and mimeType = 'application/pdf'"
-results = drive_service.files().list(q=query, fields="files(id, name)").execute()
-fichiers = results.get('files', [])
+# Fonction pour récupérer l'intégralité des fichiers (gestion de la pagination)
+def get_all_recipes():
+    fichiers = []
+    page_token = None
+    query = f"'{FOLDER_ID}' in parents and trashed = false and mimeType = 'application/pdf'"
+    
+    while True:
+        response = drive_service.files().list(
+            q=query,
+            fields="nextPageToken, files(id, name)",
+            pageSize=100,
+            pageToken=page_token
+        ).execute()
+        
+        fichiers.extend(response.get('files', []))
+        page_token = response.get('nextPageToken', None)
+        
+        if page_token is None:
+            break
+            
+    return fichiers
+
+fichiers = get_all_recipes()
 
 if not fichiers:
     st.info("Aucune recette trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
 else:
+    # Tri par ordre alphabétique
+    fichiers = sorted(fichiers, key=lambda x: x['name'].lower())
+    
     for f in fichiers:
         nom = f['name']
         file_id = f['id']
@@ -73,7 +95,6 @@ else:
             continue
 
         with st.expander(f"📖 {nom.replace('.pdf', '')}"):
-            # Téléchargement du PDF pour lecture / visionnage
             request = drive_service.files().get_media(fileId=file_id)
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
