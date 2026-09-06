@@ -1,7 +1,7 @@
 import streamlit as st
 import io
-import base64
 import requests
+import pypdfium2 as pdfium
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
@@ -10,7 +10,7 @@ import google.auth.transport.requests
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
 st.title("🍳 Le Carnet de Recettes de la Maison")
 
-# Client d'authentification optimisé avec `requests`
+# Client d'authentification
 @st.cache_resource
 def get_drive_service():
     creds = service_account.Credentials.from_service_account_info(
@@ -101,7 +101,6 @@ else:
     for f in fichiers:
         nom = f['name']
         file_id = f['id']
-        mime = f.get('mimeType', '')
         
         if categorie_filtre != "Toutes" and f"[{categorie_filtre}]" not in nom:
             continue
@@ -114,26 +113,27 @@ else:
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
             headers = {"Authorization": f"Bearer {creds.token}"}
             
-            # Bouton pour afficher la recette à l'écran
             if st.button(f"👁️ Afficher la recette", key=f"view_{file_id}"):
-                with st.spinner("Chargement de la recette..."):
+                with st.spinner("Chargement et affichage des pages..."):
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
-                        # Si c'est un PDF, on l'affiche directement dans un lecteur intégré
-                        if "pdf" in mime or nom.endswith(".pdf"):
-                            base64_pdf = base64.b64encode(res.content).decode('utf-8')
-                            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="700" type="application/pdf"></iframe>'
-                            st.markdown(pdf_display, unsafe_allow_html=True)
-                        else:
-                            st.info("Ce fichier n'est pas un PDF. Vous pouvez le télécharger ci-dessous.")
+                        try:
+                            # Conversion instantanée des pages du PDF en images
+                            pdf_file = pdfium.PdfDocument(res.content)
+                            for page_index in range(len(pdf_file)):
+                                page = pdf_file[page_index]
+                                image = page.render(scale=2).to_pil()
+                                st.image(image, use_container_width=True)
+                        except Exception as e:
+                            st.error("Impossible d'afficher l'aperçu du PDF.")
 
-                        # Bouton optionnel de téléchargement en dessous au besoin
+                        st.markdown("---")
                         st.download_button(
-                            label="💾 Télécharger le fichier PDF sur l'appareil",
+                            label="💾 Télécharger le fichier PDF",
                             data=res.content,
                             file_name=nom,
                             mime="application/pdf",
                             key=f"dl_{file_id}"
                         )
                     else:
-                        st.error("Erreur lors de la récupération du fichier.")
+                        st.error("Erreur lors de la récupération de la recette.")
