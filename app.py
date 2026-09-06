@@ -1,6 +1,8 @@
 import streamlit as st
 import io
 import requests
+import unicodedata
+import re
 import pypdfium2 as pdfium
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -9,6 +11,21 @@ import google.auth.transport.requests
 
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
 st.title("🍳 Le Carnet de Recettes de la Maison")
+
+# Fonction pour normaliser le texte (supprime les accents, gère œ/æ et casse)
+def normaliser_texte(texte):
+    if not texte:
+        return ""
+    # Remplace les ligatures courantes
+    texte = texte.replace("œ", "oe").replace("Œ", "oe").replace("æ", "ae").replace("Æ", "ae")
+    # Décompose les caractères accentués
+    texte = unicodedata.normalize('NFD', texte)
+    # Supprime tous les diacritiques (accents)
+    texte = "".join(c for c in texte if unicodedata.category(c) != 'Mn')
+    # Passe en minuscules et ne garde que les lettres et chiffres
+    texte = texte.lower()
+    texte = re.sub(r'[^a-z0-9]', '', texte)
+    return texte
 
 # Client d'authentification
 @st.cache_resource
@@ -63,7 +80,7 @@ if st.sidebar.button("🔄 Rafraîchir la liste"):
 
 # --- RECHERCHE EN HAUT DE LA PAGE PRINCIPALE ---
 st.markdown("---")
-recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: Tartiflette, Poulet, Tarte...)")
+recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: crepe, gateau, oeuf, poulet...)")
 st.markdown("---")
 
 st.subheader("📚 Vos Recettes Sauvegardées")
@@ -108,24 +125,28 @@ else:
     fichiers_pdf = sorted(fichiers_pdf, key=lambda x: x['name'].lower())
     recettes_affichees = 0
     
-    # Nettoyage du terme de recherche
-    terme_recherche = recherche.strip().lower()
+    # Normalisation de la recherche de l'utilisateur
+    terme_recherche_clean = normaliser_texte(recherche)
     
     for f in fichiers_pdf:
         nom = f['name']
         file_id = f['id']
         
-        # 1. Filtre par catégorie (depuis le menu latéral)
+        # 1. Filtre par catégorie
         if categorie_filtre != "Toutes" and f"[{categorie_filtre}]" not in nom:
             continue
             
-        # Nom propre lisible (ex: "Tarte aux pommes")
+        # Nom propre lisible pour l'affichage (ex: "Tarte aux pommes")
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
         for cat in ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]:
             nom_affiche = nom_affiche.replace(f"[{cat}] ", "").replace(f"[{cat}]", "")
         
-        # 2. Filtre par recherche texte (champ du haut)
-        if terme_recherche and (terme_recherche not in nom.lower() and terme_recherche not in nom_affiche.lower()):
+        # Normalisation du nom de la recette
+        nom_clean = normaliser_texte(nom_affiche)
+        nom_fichier_clean = normaliser_texte(nom)
+        
+        # 2. Filtre par recherche tolérante (sans accents, sans ligature œ)
+        if terme_recherche_clean and (terme_recherche_clean not in nom_clean and terme_recherche_clean not in nom_fichier_clean):
             continue
 
         recettes_affichees += 1
