@@ -12,14 +12,18 @@ import google.auth.transport.requests
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
 st.title("🍳 Le Carnet de Recettes de la Maison")
 
-# Normalisation du texte
+# Normalisation avancée du texte (suppression des accents, majuscules et caractères spéciaux)
 def normaliser_texte(texte):
     if not texte:
         return ""
+    # Remplacement des ligatures
     texte = texte.replace("œ", "oe").replace("Œ", "oe").replace("æ", "ae").replace("Æ", "ae")
+    # Décomposition des caractères accentués (NFD)
     texte = unicodedata.normalize('NFD', texte)
+    # Suppression des diacritiques (accents)
     texte = "".join(c for c in texte if unicodedata.category(c) != 'Mn')
     texte = texte.lower()
+    # Conservation des lettres et chiffres uniquement
     texte = re.sub(r'[^a-z0-9]', '', texte)
     return texte
 
@@ -113,7 +117,7 @@ for cat, count in stats_cat.items():
 
 # --- AFFICHAGE PRINCIPAL ---
 st.markdown("---")
-recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: crepe, gateau, oeuf, poulet...)")
+recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: pate, crepe, gateau, poulet...)")
 st.markdown("---")
 
 if not fichiers_pdf:
@@ -147,8 +151,9 @@ else:
         nom_affiche = nom_affiche.replace("[Entrées]", "").replace("[ENTREES]", "").replace("[entrées]", "").strip()
         nom_affiche = nom_affiche.replace('_', ' ').strip()
         
+        # Recherche tolérante : comparaison entre le mot nettoyé et le titre nettoyé
         nom_clean = normaliser_texte(nom_affiche)
-        if terme_recherche_clean and (terme_recherche_clean not in nom_clean and terme_recherche_clean not in nom_norm):
+        if terme_recherche_clean and (terme_recherche_clean not in nom_clean):
             continue
             
         fichiers_filtrer.append((f, nom_affiche))
