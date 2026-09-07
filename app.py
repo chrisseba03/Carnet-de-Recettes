@@ -110,6 +110,16 @@ st.sidebar.header("⚙️ Options")
 categorie_filtre = st.sidebar.selectbox("Filtrer par catégorie", ["Toutes"] + categories_liste)
 uniquement_favoris = st.sidebar.checkbox("⭐ Afficher uniquement mes Coups de cœur", value=False)
 
+# ZOOM PERMANENT DANS LE MENU LATÉRAL
+zoom_niveau = st.sidebar.slider(
+    "🔍 Taille d'affichage des recettes :", 
+    min_value=100, 
+    max_value=300, 
+    value=150, 
+    step=25, 
+    format="%d%%"
+)
+
 if st.sidebar.button("🔄 Rafraîchir la liste"):
     st.cache_data.clear()
     st.rerun()
@@ -159,7 +169,7 @@ else:
         if uniquement_favoris and not est_favori:
             continue
 
-        # Détermination de la catégorie du fichier (Insensible aux accents et majuscules)
+        # Détermination de la catégorie du fichier
         cat_du_fichier = "Autres"
         for cat in categories_liste:
             cat_norm = normaliser_texte(cat)
@@ -201,6 +211,9 @@ else:
     else:
         st.subheader(f"📚 Toutes vos recettes ({total_recettes})")
 
+    # Calcul de l'échelle d'affichage globale
+    echelle_rendu = (zoom_niveau / 100.0) * 1.5
+
     # Affichage de chaque recette
     for f, nom_affiche, est_favori in fichiers_filtrer:
         nom = f['name']
@@ -227,20 +240,6 @@ else:
             headers = {"Authorization": f"Bearer {creds.token}"}
             
             if st.button(f"👁️ Afficher la recette", key=f"view_{file_id}"):
-                # Curseur de zoom pour ajuster la taille de la recette
-                zoom_niveau = st.slider(
-                    "🔍 Niveau de zoom :", 
-                    min_value=100, 
-                    max_value=300, 
-                    value=150, 
-                    step=25, 
-                    format="%d%%",
-                    key=f"zoom_{file_id}"
-                )
-                
-                # Calcul de l'échelle d'affichage selon le niveau de zoom choisi
-                echelle_rendu = (zoom_niveau / 100.0) * 2.0
-
                 with st.spinner("Chargement et affichage des pages..."):
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
