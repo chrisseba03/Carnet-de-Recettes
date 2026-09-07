@@ -9,8 +9,8 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import google.auth.transport.requests
 
-st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
-st.title("🍳 Le Carnet de Recettes de la Maison")
+st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="👨‍🍳", layout="wide")
+st.title("👨‍🍳 Le Carnet de Recettes de la Maison")
 
 # Normalisation avancée du texte (suppression des accents, majuscules et caractères spéciaux)
 def normaliser_texte(texte):
