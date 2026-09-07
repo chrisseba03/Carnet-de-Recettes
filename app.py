@@ -7,13 +7,13 @@ import json
 import pypdfium2 as pdfium
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload, MediaInMemoryUpload
+from googleapiclient.http import MediaIoBaseUpload
 import google.auth.transport.requests
 
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
 st.title("🍳 Le Carnet de Recettes de la Maison")
 
-# Fonction pour normaliser le texte (supprime les accents, gère œ/æ et casse)
+# Normalisation du texte
 def normaliser_texte(texte):
     if not texte:
         return ""
@@ -43,46 +43,10 @@ except Exception as e:
     st.error("Erreur de connexion à Google Drive. Vérifiez la configuration des Secrets.")
     st.stop()
 
-# --- GESTION PERMANENTE DES FAVORIS VIA GOOGLE DRIVE ---
-FAVORIS_FILENAME = "favoris_app.json"
-
-def charger_favoris_drive():
-    try:
-        query = f"'{FOLDER_ID}' in parents and name = '{FAVORIS_FILENAME}' and trashed = false"
-        res = drive_service.files().list(q=query, fields="files(id)").execute()
-        files = res.get('files', [])
-        if files:
-            file_id = files[0]['id']
-            download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
-            headers = {"Authorization": f"Bearer {creds.token}"}
-            r = requests.get(download_url, headers=headers)
-            if r.status_code == 200:
-                return set(json.loads(r.text))
-    except Exception:
-        pass
-    return set()
-
-def sauvegarder_favoris_drive(favoris_set):
-    try:
-        data = json.dumps(list(favoris_set))
-        media = MediaInMemoryUpload(data.encode('utf-8'), mimetype='application/json')
-        
-        query = f"'{FOLDER_ID}' in parents and name = '{FAVORIS_FILENAME}' and trashed = false"
-        res = drive_service.files().list(q=query, fields="files(id)").execute()
-        files = res.get('files', [])
-        
-        if files:
-            file_id = files[0]['id']
-            drive_service.files().update(fileId=file_id, media_body=media).execute()
-        else:
-            file_metadata = {'name': FAVORIS_FILENAME, 'parents': [FOLDER_ID]}
-            drive_service.files().create(body=file_metadata, media_body=media).execute()
-    except Exception as e:
-        st.error(f"Erreur lors de la sauvegarde des favoris : {e}")
-
-# Initialisation des favoris depuis Google Drive s'ils ne sont pas encore chargés
+# --- GESTION LOCALE DES FAVORIS PAR NAVIGATEUR ---
+# Si vous préférez conserver les favoris dans la session courante sans plantage Drive :
 if "favoris" not in st.session_state:
-    st.session_state.favoris = charger_favoris_drive()
+    st.session_state.favoris = set()
 
 # --- RECUPERATION DE TOUTES LES RECETTES ---
 @st.cache_data(ttl=600)
@@ -113,13 +77,12 @@ except Exception as err:
     st.error("Petite baisse de réseau avec Google Drive. Cliquez sur 'Rafraîchir la liste' dans le menu de gauche.")
     st.stop()
 
-# Filtre strict sur l'extension PDF
 fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
 categories_liste = ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
 
-# --- BARRE LATÉRALE : AJOUT & FILTRES ---
+# --- BARRE LATÉRALE ---
 st.sidebar.header("➕ Ajouter une recette")
 nouveau_pdf = st.sidebar.file_uploader("Importer un fichier PDF", type=["pdf"])
 titre_recette = st.sidebar.text_input("Nom de la recette")
@@ -128,10 +91,7 @@ cat_recette = st.sidebar.selectbox("Catégorie", categories_liste)
 if st.sidebar.button("Sauvegarder sur Google Drive"):
     if nouveau_pdf and titre_recette:
         nom_fichier = f"[{cat_recette}] {titre_recette.strip()}.pdf"
-        file_metadata = {
-            'name': nom_fichier,
-            'parents': [FOLDER_ID]
-        }
+        file_metadata = {'name': nom_fichier, 'parents': [FOLDER_ID]}
         media = MediaIoBaseUpload(io.BytesIO(nouveau_pdf.read()), mimetype='application/pdf')
         
         with st.spinner("Envoi vers Google Drive en cours..."):
@@ -150,10 +110,9 @@ uniquement_favoris = st.sidebar.checkbox("⭐ Afficher uniquement mes Coups de c
 
 if st.sidebar.button("🔄 Rafraîchir la liste"):
     st.cache_data.clear()
-    st.session_state.favoris = charger_favoris_drive()
     st.rerun()
 
-# --- RECAPITULATIF PAR CATEGORIE DANS LA BARRE LATERALE ---
+# --- RECAPITULATIF DANS LA BARRE LATERALE ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("📊 Répartition")
 stats_cat = {cat: 0 for cat in categories_liste}
@@ -182,23 +141,20 @@ recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeh
 st.markdown("---")
 
 if not fichiers_pdf:
-    st.info("Aucune recette au format PDF trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
+    st.info("Aucune recette au format PDF trouvée sur votre Google Drive.")
 else:
     terme_recherche_clean = normaliser_texte(recherche)
-    
-    # Pré-filtrage des recettes
     fichiers_filtrer = []
+    
     for f in fichiers_pdf:
         nom = f['name']
         file_id = f['id']
         nom_norm = normaliser_texte(nom)
         
-        # Filtre sur les favoris
         est_favori = file_id in st.session_state.favoris
         if uniquement_favoris and not est_favori:
             continue
 
-        # Détermination de la catégorie du fichier
         cat_du_fichier = "Autres"
         for cat in categories_liste:
             cat_norm = normaliser_texte(cat)
@@ -206,33 +162,26 @@ else:
                 cat_du_fichier = cat
                 break
                 
-        # Filtre de catégorie
         if categorie_filtre != "Toutes" and cat_du_fichier != categorie_filtre:
             continue
             
-        # Nettoyage du titre affiché
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
         for cat in categories_liste:
             pattern = re.compile(re.escape(f"[{cat}]"), re.IGNORECASE)
             nom_affiche = pattern.sub("", nom_affiche)
-            pattern_acc = re.compile(re.escape(f"[{unicodedata.normalize('NFD', cat)}]"), re.IGNORECASE)
-            nom_affiche = pattern_acc.sub("", nom_affiche)
             
         nom_affiche = nom_affiche.replace("[Entrées]", "").replace("[ENTREES]", "").replace("[entrées]", "").strip()
         nom_affiche = nom_affiche.replace('_', ' ').strip()
         
         nom_clean = normaliser_texte(nom_affiche)
-        
         if terme_recherche_clean and (terme_recherche_clean not in nom_clean and terme_recherche_clean not in nom_norm):
             continue
             
         fichiers_filtrer.append((f, nom_affiche, est_favori))
 
-    # Tri : Les favoris s'affichent TOUJOURS en premier, puis ordre alphabétique
     fichiers_filtrer = sorted(fichiers_filtrer, key=lambda x: (not x[2], x[1].lower()))
-
-    # Affichage du titre et des sous-titres
     nb_resultats = len(fichiers_filtrer)
+
     if uniquement_favoris:
         st.subheader(f"⭐ Vos recettes coup de cœur ({nb_resultats})")
     elif categorie_filtre != "Toutes" or terme_recherche_clean:
@@ -240,28 +189,22 @@ else:
     else:
         st.subheader(f"📚 Toutes vos recettes ({total_recettes})")
 
-    # Affichage de chaque recette
     for f, nom_affiche, est_favori in fichiers_filtrer:
         nom = f['name']
         file_id = f['id']
 
-        # Préfixe avec étoile si favori
         titre_accordéon = f"⭐ {nom_affiche}" if est_favori else f"📖 {nom_affiche}"
 
         with st.expander(titre_accordéon):
             col_fav, col_actions = st.columns([1, 4])
-            
-            # Gestion du bouton favori avec sauvegarde automatique sur Drive
             with col_fav:
                 if est_favori:
                     if st.button("❌ Retirer des favoris", key=f"fav_del_{file_id}"):
                         st.session_state.favoris.remove(file_id)
-                        sauvegarder_favoris_drive(st.session_state.favoris)
                         st.rerun()
                 else:
                     if st.button("⭐ Ajouter aux favoris", key=f"fav_add_{file_id}"):
                         st.session_state.favoris.add(file_id)
-                        sauvegarder_favoris_drive(st.session_state.favoris)
                         st.rerun()
 
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
