@@ -171,10 +171,9 @@ else:
         if categorie_filtre != "Toutes" and cat_du_fichier != categorie_filtre:
             continue
             
-        # Nettoyage du titre affiché (Retire les crochets et remplace les tirets bas par des espaces)
+        # Nettoyage du titre affiché
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
         for cat in categories_liste:
-            # Suppression insensible aux accents du tag
             pattern = re.compile(re.escape(f"[{cat}]"), re.IGNORECASE)
             nom_affiche = pattern.sub("", nom_affiche)
             pattern_acc = re.compile(re.escape(f"[{unicodedata.normalize('NFD', cat)}]"), re.IGNORECASE)
@@ -228,13 +227,27 @@ else:
             headers = {"Authorization": f"Bearer {creds.token}"}
             
             if st.button(f"👁️ Afficher la recette", key=f"view_{file_id}"):
+                # Curseur de zoom pour ajuster la taille de la recette
+                zoom_niveau = st.slider(
+                    "🔍 Niveau de zoom :", 
+                    min_value=100, 
+                    max_value=300, 
+                    value=150, 
+                    step=25, 
+                    format="%d%%",
+                    key=f"zoom_{file_id}"
+                )
+                
+                # Calcul de l'échelle d'affichage selon le niveau de zoom choisi
+                echelle_rendu = (zoom_niveau / 100.0) * 2.0
+
                 with st.spinner("Chargement et affichage des pages..."):
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
                         try:
                             pdf_file = pdfium.PdfDocument(res.content)
                             for page_index in range(len(pdf_file)):
-                                image = pdf_file[page_index].render(scale=2).to_pil()
+                                image = pdf_file[page_index].render(scale=echelle_rendu).to_pil()
                                 st.image(image, use_container_width=True)
                         except Exception as e:
                             st.error("Impossible d'afficher l'aperçu du PDF.")
