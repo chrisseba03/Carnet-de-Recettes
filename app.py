@@ -77,31 +77,7 @@ total_recettes = len(fichiers_pdf)
 
 categories_liste = ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
 
-# --- BARRE LATÉRALE : AJOUT & FILTRES ---
-st.sidebar.header("➕ Ajouter une recette")
-nouveau_pdf = st.sidebar.file_uploader("Importer un fichier PDF", type=["pdf"])
-titre_recette = st.sidebar.text_input("Nom de la recette")
-cat_recette = st.sidebar.selectbox("Catégorie", categories_liste)
-
-if st.sidebar.button("Sauvegarder sur Google Drive"):
-    if nouveau_pdf and titre_recette:
-        nom_fichier = f"[{cat_recette}] {titre_recette.strip()}.pdf"
-        file_metadata = {
-            'name': nom_fichier,
-            'parents': [FOLDER_ID]
-        }
-        media = MediaIoBaseUpload(io.BytesIO(nouveau_pdf.read()), mimetype='application/pdf')
-        
-        with st.spinner("Envoi vers Google Drive en cours..."):
-            drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        
-        st.sidebar.success(f"Recette '{titre_recette}' sauvegardée avec succès !")
-        st.cache_data.clear()
-        st.rerun()
-    else:
-        st.sidebar.error("Veuillez renseigner le titre et choisir un fichier PDF.")
-
-st.sidebar.markdown("---")
+# --- BARRE LATÉRALE : OPTIONS ET FILTRES (EN HAUT) ---
 st.sidebar.header("⚙️ Options")
 categorie_filtre = st.sidebar.selectbox("Filtrer par catégorie", ["Toutes"] + categories_liste)
 
@@ -129,6 +105,31 @@ for f in fichiers_pdf:
 for cat, count in stats_cat.items():
     if count > 0:
         st.sidebar.text(f"• {cat} : {count}")
+
+# --- BARRE LATÉRALE : AJOUT DE RECETTE (EN BAS) ---
+st.sidebar.markdown("---")
+st.sidebar.header("➕ Ajouter une recette")
+nouveau_pdf = st.sidebar.file_uploader("Importer un fichier PDF", type=["pdf"])
+titre_recette = st.sidebar.text_input("Nom de la recette")
+cat_recette = st.sidebar.selectbox("Catégorie de la recette", categories_liste)
+
+if st.sidebar.button("Sauvegarder sur Google Drive"):
+    if nouveau_pdf and titre_recette:
+        nom_fichier = f"[{cat_recette}] {titre_recette.strip()}.pdf"
+        file_metadata = {
+            'name': nom_fichier,
+            'parents': [FOLDER_ID]
+        }
+        media = MediaIoBaseUpload(io.BytesIO(nouveau_pdf.read()), mimetype='application/pdf')
+        
+        with st.spinner("Envoi vers Google Drive en cours..."):
+            drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        
+        st.sidebar.success(f"Recette '{titre_recette}' sauvegardée avec succès !")
+        st.cache_data.clear()
+        st.rerun()
+    else:
+        st.sidebar.error("Veuillez renseigner le titre et choisir un fichier PDF.")
 
 # --- RECHERCHE ET AFFICHAGE PRINCIPAL ---
 st.markdown("---")
