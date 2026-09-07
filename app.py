@@ -3,18 +3,15 @@ import io
 import requests
 import unicodedata
 import re
+import json
 import pypdfium2 as pdfium
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload, MediaInMemoryUpload
 import google.auth.transport.requests
 
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
 st.title("🍳 Le Carnet de Recettes de la Maison")
-
-# Initialisation du stockage des favoris dans la session utilisateur
-if "favoris" not in st.session_state:
-    st.session_state.favoris = set()
 
 # Fonction pour normaliser le texte (supprime les accents, gère œ/æ et casse)
 def normaliser_texte(texte):
@@ -45,6 +42,47 @@ try:
 except Exception as e:
     st.error("Erreur de connexion à Google Drive. Vérifiez la configuration des Secrets.")
     st.stop()
+
+# --- GESTION PERMANENTE DES FAVORIS VIA GOOGLE DRIVE ---
+FAVORIS_FILENAME = "favoris_app.json"
+
+def charger_favoris_drive():
+    try:
+        query = f"'{FOLDER_ID}' in parents and name = '{FAVORIS_FILENAME}' and trashed = false"
+        res = drive_service.files().list(q=query, fields="files(id)").execute()
+        files = res.get('files', [])
+        if files:
+            file_id = files[0]['id']
+            download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+            headers = {"Authorization": f"Bearer {creds.token}"}
+            r = requests.get(download_url, headers=headers)
+            if r.status_code == 200:
+                return set(json.loads(r.text))
+    except Exception:
+        pass
+    return set()
+
+def sauvegarder_favoris_drive(favoris_set):
+    try:
+        data = json.dumps(list(favoris_set))
+        media = MediaInMemoryUpload(data.encode('utf-8'), mimetype='application/json')
+        
+        query = f"'{FOLDER_ID}' in parents and name = '{FAVORIS_FILENAME}' and trashed = false"
+        res = drive_service.files().list(q=query, fields="files(id)").execute()
+        files = res.get('files', [])
+        
+        if files:
+            file_id = files[0]['id']
+            drive_service.files().update(fileId=file_id, media_body=media).execute()
+        else:
+            file_metadata = {'name': FAVORIS_FILENAME, 'parents': [FOLDER_ID]}
+            drive_service.files().create(body=file_metadata, media_body=media).execute()
+    except Exception as e:
+        st.error(f"Erreur lors de la sauvegarde des favoris : {e}")
+
+# Initialisation des favoris depuis Google Drive s'ils ne sont pas encore chargés
+if "favoris" not in st.session_state:
+    st.session_state.favoris = charger_favoris_drive()
 
 # --- RECUPERATION DE TOUTES LES RECETTES ---
 @st.cache_data(ttl=600)
@@ -112,6 +150,7 @@ uniquement_favoris = st.sidebar.checkbox("⭐ Afficher uniquement mes Coups de c
 
 if st.sidebar.button("🔄 Rafraîchir la liste"):
     st.cache_data.clear()
+    st.session_state.favoris = charger_favoris_drive()
     st.rerun()
 
 # --- RECAPITULATIF PAR CATEGORIE DANS LA BARRE LATERALE ---
@@ -159,7 +198,7 @@ else:
         if uniquement_favoris and not est_favori:
             continue
 
-        # Détermination de la catégorie du fichier (Insensible aux accents et majuscules)
+        # Détermination de la catégorie du fichier
         cat_du_fichier = "Autres"
         for cat in categories_liste:
             cat_norm = normaliser_texte(cat)
@@ -212,15 +251,17 @@ else:
         with st.expander(titre_accordéon):
             col_fav, col_actions = st.columns([1, 4])
             
-            # Gestion du bouton favori
+            # Gestion du bouton favori avec sauvegarde automatique sur Drive
             with col_fav:
                 if est_favori:
                     if st.button("❌ Retirer des favoris", key=f"fav_del_{file_id}"):
                         st.session_state.favoris.remove(file_id)
+                        sauvegarder_favoris_drive(st.session_state.favoris)
                         st.rerun()
                 else:
                     if st.button("⭐ Ajouter aux favoris", key=f"fav_add_{file_id}"):
                         st.session_state.favoris.add(file_id)
+                        sauvegarder_favoris_drive(st.session_state.favoris)
                         st.rerun()
 
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
