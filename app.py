@@ -110,16 +110,6 @@ st.sidebar.header("⚙️ Options")
 categorie_filtre = st.sidebar.selectbox("Filtrer par catégorie", ["Toutes"] + categories_liste)
 uniquement_favoris = st.sidebar.checkbox("⭐ Afficher uniquement mes Coups de cœur", value=False)
 
-# ZOOM PERMANENT DANS LE MENU LATÉRAL
-zoom_niveau = st.sidebar.slider(
-    "🔍 Taille d'affichage des recettes :", 
-    min_value=100, 
-    max_value=300, 
-    value=150, 
-    step=25, 
-    format="%d%%"
-)
-
 if st.sidebar.button("🔄 Rafraîchir la liste"):
     st.cache_data.clear()
     st.rerun()
@@ -169,7 +159,7 @@ else:
         if uniquement_favoris and not est_favori:
             continue
 
-        # Détermination de la catégorie du fichier
+        # Détermination de la catégorie du fichier (Insensible aux accents et majuscules)
         cat_du_fichier = "Autres"
         for cat in categories_liste:
             cat_norm = normaliser_texte(cat)
@@ -211,9 +201,6 @@ else:
     else:
         st.subheader(f"📚 Toutes vos recettes ({total_recettes})")
 
-    # Calcul de l'échelle d'affichage globale
-    echelle_rendu = (zoom_niveau / 100.0) * 1.5
-
     # Affichage de chaque recette
     for f, nom_affiche, est_favori in fichiers_filtrer:
         nom = f['name']
@@ -246,7 +233,7 @@ else:
                         try:
                             pdf_file = pdfium.PdfDocument(res.content)
                             for page_index in range(len(pdf_file)):
-                                image = pdf_file[page_index].render(scale=echelle_rendu).to_pil()
+                                image = pdf_file[page_index].render(scale=2).to_pil()
                                 st.image(image, use_container_width=True)
                         except Exception as e:
                             st.error("Impossible d'afficher l'aperçu du PDF.")
