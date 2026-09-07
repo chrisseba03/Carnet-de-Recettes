@@ -12,18 +12,14 @@ import google.auth.transport.requests
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="👨‍🍳", layout="wide")
 st.title("👨‍🍳 Le Carnet de Recettes de la Maison")
 
-# Normalisation avancée du texte (suppression des accents, majuscules et caractères spéciaux)
+# Normalisation avancée du texte
 def normaliser_texte(texte):
     if not texte:
         return ""
-    # Remplacement des ligatures
     texte = texte.replace("œ", "oe").replace("Œ", "oe").replace("æ", "ae").replace("Æ", "ae")
-    # Décomposition des caractères accentués (NFD)
     texte = unicodedata.normalize('NFD', texte)
-    # Suppression des diacritiques (accents)
     texte = "".join(c for c in texte if unicodedata.category(c) != 'Mn')
     texte = texte.lower()
-    # Conservation des lettres et chiffres uniquement
     texte = re.sub(r'[^a-z0-9]', '', texte)
     return texte
 
@@ -151,7 +147,6 @@ else:
         nom_affiche = nom_affiche.replace("[Entrées]", "").replace("[ENTREES]", "").replace("[entrées]", "").strip()
         nom_affiche = nom_affiche.replace('_', ' ').strip()
         
-        # Recherche tolérante : comparaison entre le mot nettoyé et le titre nettoyé
         nom_clean = normaliser_texte(nom_affiche)
         if terme_recherche_clean and (terme_recherche_clean not in nom_clean):
             continue
@@ -173,9 +168,30 @@ else:
         with st.expander(f"📖 {nom_affiche}"):
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
             headers = {"Authorization": f"Bearer {creds.token}"}
-            
-            if st.button("👁️ Afficher la recette", key=f"view_{file_id}"):
-                with st.spinner("Chargement..."):
+
+            # Création de deux colonnes côte à côte pour les boutons
+            col_btn1, col_btn2 = st.columns([1, 1])
+
+            with col_btn1:
+                voir_recette = st.button("👁️ Afficher la recette", key=f"view_{file_id}")
+
+            with col_btn2:
+                # Fonction de téléchargement direct
+                def telecharger_fichier(url, h):
+                    r = requests.get(url, headers=h)
+                    return r.content if r.status_code == 200 else None
+
+                st.download_button(
+                    label="💾 Télécharger le PDF",
+                    data=telecharger_fichier(download_url, headers),
+                    file_name=nom,
+                    mime="application/pdf",
+                    key=f"dl_{file_id}"
+                )
+
+            # Affichage de l'aperçu si le bouton "Afficher" est cliqué
+            if voir_recette:
+                with st.spinner("Chargement de l'aperçu..."):
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
                         try:
@@ -185,15 +201,6 @@ else:
                                 st.image(image, use_container_width=True)
                         except Exception:
                             st.error("Impossible d'afficher l'aperçu du PDF.")
-
-                        st.markdown("---")
-                        st.download_button(
-                            label="💾 Télécharger le fichier PDF",
-                            data=res.content,
-                            file_name=nom,
-                            mime="application/pdf",
-                            key=f"dl_{file_id}"
-                        )
                     else:
                         st.error("Erreur de récupération.")
 
