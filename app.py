@@ -12,12 +12,15 @@ import google.auth.transport.requests
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
 st.title("🍳 Le Carnet de Recettes de la Maison")
 
-# Initialisation des variables de session (favoris et échelle de zoom)
+# Initialisation des variables de session
 if "favoris" not in st.session_state:
     st.session_state.favoris = set()
 
-if "echelle_zoom" not in st.session_state:
-    st.session_state.echelle_zoom = {}
+if "recettes_ouvertes" not in st.session_state:
+    st.session_state.recettes_ouvertes = set()
+
+if "zoom_recettes" not in st.session_state:
+    st.session_state.zoom_recettes = {}
 
 # Fonction pour normaliser le texte (supprime les accents, gère œ/æ et casse)
 def normaliser_texte(texte):
@@ -209,9 +212,9 @@ else:
         nom = f['name']
         file_id = f['id']
 
-        # Initialisation du niveau de zoom individuel
-        if file_id not in st.session_state.echelle_zoom:
-            st.session_state.echelle_zoom[file_id] = 2.0  # Résolution standard (100%)
+        # Initialisation du niveau de zoom par défaut (scale=2.0)
+        if file_id not in st.session_state.zoom_recettes:
+            st.session_state.zoom_recettes[file_id] = 2.0
 
         titre_accordéon = f"⭐ {nom_affiche}" if est_favori else f"📖 {nom_affiche}"
 
@@ -232,18 +235,28 @@ else:
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
             headers = {"Authorization": f"Bearer {creds.token}"}
             
-            if st.button(f"👁️ Afficher la recette", key=f"view_{file_id}"):
-                
-                # Boutons de réglage du zoom direct pour tablette
-                col_z1, col_z2, col_z3 = st.columns([1, 1, 2])
+            # Bouton d'activation de la recette (mémorisé en session)
+            est_ouverte = file_id in st.session_state.recettes_ouvertes
+            
+            btn_label = "🙈 Masquer la recette" if est_ouverte else "👁️ Afficher la recette"
+            if st.button(btn_label, key=f"view_{file_id}"):
+                if est_ouverte:
+                    st.session_state.recettes_ouvertes.remove(file_id)
+                else:
+                    st.session_state.recettes_ouvertes.add(file_id)
+                st.rerun()
+
+            # Affichage de la recette si elle est activée
+            if file_id in st.session_state.recettes_ouvertes:
+                col_z1, col_z2 = st.columns([1, 1])
                 with col_z1:
-                    if st.button("🔎 Zoomer (+)", key=f"z_in_{file_id}"):
-                        st.session_state.echelle_zoom[file_id] += 1.0
+                    if st.button("🔎 Grand Zoom (+)", key=f"z_in_{file_id}"):
+                        st.session_state.zoom_recettes[file_id] += 1.0
                         st.rerun()
                 with col_z2:
-                    if st.button("🔍 Réduire (-)", key=f"z_out_{file_id}"):
-                        if st.session_state.echelle_zoom[file_id] > 1.5:
-                            st.session_state.echelle_zoom[file_id] -= 1.0
+                    if st.button("🔍 Taille Normale (-)", key=f"z_out_{file_id}"):
+                        if st.session_state.zoom_recettes[file_id] > 2.0:
+                            st.session_state.zoom_recettes[file_id] -= 1.0
                             st.rerun()
 
                 with st.spinner("Chargement de la recette..."):
@@ -251,10 +264,10 @@ else:
                     if res.status_code == 200:
                         try:
                             pdf_file = pdfium.PdfDocument(res.content)
-                            echelle_actuelle = st.session_state.echelle_zoom[file_id]
+                            echelle_rendu = st.session_state.zoom_recettes[file_id]
                             
                             for page_index in range(len(pdf_file)):
-                                image = pdf_file[page_index].render(scale=echelle_actuelle).to_pil()
+                                image = pdf_file[page_index].render(scale=echelle_rendu).to_pil()
                                 st.image(image, use_container_width=True)
                         except Exception as e:
                             st.error("Impossible d'afficher l'aperçu du PDF.")
