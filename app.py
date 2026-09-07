@@ -12,17 +12,11 @@ import google.auth.transport.requests
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
 st.title("🍳 Le Carnet de Recettes de la Maison")
 
-# Initialisation des variables de session
+# Initialisation du stockage des favoris dans la session utilisateur
 if "favoris" not in st.session_state:
     st.session_state.favoris = set()
 
-if "recettes_ouvertes" not in st.session_state:
-    st.session_state.recettes_ouvertes = set()
-
-if "largeur_images" not in st.session_state:
-    st.session_state.largeur_images = {}
-
-# Fonction pour normaliser le texte
+# Fonction pour normaliser le texte (supprime les accents, gère œ/æ et casse)
 def normaliser_texte(texte):
     if not texte:
         return ""
@@ -81,12 +75,13 @@ except Exception as err:
     st.error("Petite baisse de réseau avec Google Drive. Cliquez sur 'Rafraîchir la liste' dans le menu de gauche.")
     st.stop()
 
+# Filtre strict sur l'extension PDF
 fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
 categories_liste = ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
 
-# --- BARRE LATÉRALE ---
+# --- BARRE LATÉRALE : AJOUT & FILTRES ---
 st.sidebar.header("➕ Ajouter une recette")
 nouveau_pdf = st.sidebar.file_uploader("Importer un fichier PDF", type=["pdf"])
 titre_recette = st.sidebar.text_input("Nom de la recette")
@@ -95,7 +90,10 @@ cat_recette = st.sidebar.selectbox("Catégorie", categories_liste)
 if st.sidebar.button("Sauvegarder sur Google Drive"):
     if nouveau_pdf and titre_recette:
         nom_fichier = f"[{cat_recette}] {titre_recette.strip()}.pdf"
-        file_metadata = {'name': nom_fichier, 'parents': [FOLDER_ID]}
+        file_metadata = {
+            'name': nom_fichier,
+            'parents': [FOLDER_ID]
+        }
         media = MediaIoBaseUpload(io.BytesIO(nouveau_pdf.read()), mimetype='application/pdf')
         
         with st.spinner("Envoi vers Google Drive en cours..."):
@@ -116,26 +114,52 @@ if st.sidebar.button("🔄 Rafraîchir la liste"):
     st.cache_data.clear()
     st.rerun()
 
-# --- AFFICHAGE PRINCIPAL ---
+# --- RECAPITULATIF PAR CATEGORIE DANS LA BARRE LATERALE ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("📊 Répartition")
+stats_cat = {cat: 0 for cat in categories_liste}
+
+for f in fichiers_pdf:
+    nom_norm = normaliser_texte(f['name'])
+    trouve = False
+    for cat in categories_liste:
+        cat_norm = normaliser_texte(cat)
+        if f"[{cat_norm}]" in nom_norm or cat_norm in nom_norm[:len(cat_norm)+2]:
+            stats_cat[cat] += 1
+            trouve = True
+            break
+    if not trouve:
+        stats_cat["Autres"] += 1
+
+for cat, count in stats_cat.items():
+    if count > 0:
+        st.sidebar.text(f"• {cat} : {count}")
+
+st.sidebar.text(f"• ⭐ Coups de cœur : {len(st.session_state.favoris)}")
+
+# --- RECHERCHE ET AFFICHAGE PRINCIPAL ---
 st.markdown("---")
 recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: crepe, gateau, oeuf, poulet...)")
 st.markdown("---")
 
 if not fichiers_pdf:
-    st.info("Aucune recette au format PDF trouvée sur votre Google Drive.")
+    st.info("Aucune recette au format PDF trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
 else:
     terme_recherche_clean = normaliser_texte(recherche)
-    fichiers_filtrer = []
     
+    # Pré-filtrage des recettes
+    fichiers_filtrer = []
     for f in fichiers_pdf:
         nom = f['name']
         file_id = f['id']
         nom_norm = normaliser_texte(nom)
         
+        # Filtre sur les favoris
         est_favori = file_id in st.session_state.favoris
         if uniquement_favoris and not est_favori:
             continue
 
+        # Détermination de la catégorie du fichier (Insensible aux accents et majuscules)
         cat_du_fichier = "Autres"
         for cat in categories_liste:
             cat_norm = normaliser_texte(cat)
@@ -143,26 +167,33 @@ else:
                 cat_du_fichier = cat
                 break
                 
+        # Filtre de catégorie
         if categorie_filtre != "Toutes" and cat_du_fichier != categorie_filtre:
             continue
             
+        # Nettoyage du titre affiché
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
         for cat in categories_liste:
             pattern = re.compile(re.escape(f"[{cat}]"), re.IGNORECASE)
             nom_affiche = pattern.sub("", nom_affiche)
+            pattern_acc = re.compile(re.escape(f"[{unicodedata.normalize('NFD', cat)}]"), re.IGNORECASE)
+            nom_affiche = pattern_acc.sub("", nom_affiche)
             
         nom_affiche = nom_affiche.replace("[Entrées]", "").replace("[ENTREES]", "").replace("[entrées]", "").strip()
         nom_affiche = nom_affiche.replace('_', ' ').strip()
         
         nom_clean = normaliser_texte(nom_affiche)
+        
         if terme_recherche_clean and (terme_recherche_clean not in nom_clean and terme_recherche_clean not in nom_norm):
             continue
             
         fichiers_filtrer.append((f, nom_affiche, est_favori))
 
+    # Tri : Les favoris s'affichent TOUJOURS en premier, puis ordre alphabétique
     fichiers_filtrer = sorted(fichiers_filtrer, key=lambda x: (not x[2], x[1].lower()))
-    nb_resultats = len(fichiers_filtrer)
 
+    # Affichage du titre et des sous-titres
+    nb_resultats = len(fichiers_filtrer)
     if uniquement_favoris:
         st.subheader(f"⭐ Vos recettes coup de cœur ({nb_resultats})")
     elif categorie_filtre != "Toutes" or terme_recherche_clean:
@@ -170,18 +201,18 @@ else:
     else:
         st.subheader(f"📚 Toutes vos recettes ({total_recettes})")
 
+    # Affichage de chaque recette
     for f, nom_affiche, est_favori in fichiers_filtrer:
         nom = f['name']
         file_id = f['id']
 
-        # Initialisation de la largeur d'image en pixels
-        if file_id not in st.session_state.largeur_images:
-            st.session_state.largeur_images[file_id] = 700
-
+        # Préfixe avec étoile si favori
         titre_accordéon = f"⭐ {nom_affiche}" if est_favori else f"📖 {nom_affiche}"
 
         with st.expander(titre_accordéon):
             col_fav, col_actions = st.columns([1, 4])
+            
+            # Gestion du bouton favori
             with col_fav:
                 if est_favori:
                     if st.button("❌ Retirer des favoris", key=f"fav_del_{file_id}"):
@@ -195,39 +226,15 @@ else:
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
             headers = {"Authorization": f"Bearer {creds.token}"}
             
-            est_ouverte = file_id in st.session_state.recettes_ouvertes
-            btn_label = "🙈 Masquer la recette" if est_ouverte else "👁️ Afficher la recette"
-            
-            if st.button(btn_label, key=f"view_{file_id}"):
-                if est_ouverte:
-                    st.session_state.recettes_ouvertes.remove(file_id)
-                else:
-                    st.session_state.recettes_ouvertes.add(file_id)
-                st.rerun()
-
-            if file_id in st.session_state.recettes_ouvertes:
-                col_z1, col_z2, col_z3 = st.columns([1, 1, 2])
-                with col_z1:
-                    if st.button("🔎 Grand Zoom (+)", key=f"z_in_{file_id}"):
-                        st.session_state.largeur_images[file_id] += 250
-                        st.rerun()
-                with col_z2:
-                    if st.button("🔍 Réduire (-)", key=f"z_out_{file_id}"):
-                        if st.session_state.largeur_images[file_id] > 500:
-                            st.session_state.largeur_images[file_id] -= 250
-                            st.rerun()
-
-                with st.spinner("Chargement de la recette..."):
+            if st.button(f"👁️ Afficher la recette", key=f"view_{file_id}"):
+                with st.spinner("Chargement et affichage des pages..."):
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
                         try:
                             pdf_file = pdfium.PdfDocument(res.content)
-                            largeur_cible = st.session_state.largeur_images[file_id]
-                            
                             for page_index in range(len(pdf_file)):
-                                image = pdf_file[page_index].render(scale=3.0).to_pil()
-                                # Utilisation d'une largeur explicite en pixels sans use_container_width
-                                st.image(image, width=largeur_cible)
+                                image = pdf_file[page_index].render(scale=2).to_pil()
+                                st.image(image, use_container_width=True)
                         except Exception as e:
                             st.error("Impossible d'afficher l'aperçu du PDF.")
 
