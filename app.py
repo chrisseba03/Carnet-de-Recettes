@@ -3,9 +3,7 @@ import io
 import requests
 import unicodedata
 import re
-import json
 import pypdfium2 as pdfium
-import extra_streamlit_components as stx
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
@@ -13,21 +11,6 @@ import google.auth.transport.requests
 
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
 st.title("🍳 Le Carnet de Recettes de la Maison")
-
-# Initialisation du gestionnaire de cookies pour la mémoire permanente sur tablette/PC
-cookie_manager = stx.CookieManager()
-
-# Chargement automatique des favoris enregistrés dans le navigateur
-favoris_cookie = cookie_manager.get(cookie="favoris_recettes")
-
-if "favoris" not in st.session_state:
-    if favoris_cookie:
-        try:
-            st.session_state.favoris = set(json.loads(favoris_cookie))
-        except Exception:
-            st.session_state.favoris = set()
-    else:
-        st.session_state.favoris = set()
 
 # Fonction pour normaliser le texte (supprime les accents, gère œ/æ et casse)
 def normaliser_texte(texte):
@@ -121,7 +104,6 @@ if st.sidebar.button("Sauvegarder sur Google Drive"):
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Options")
 categorie_filtre = st.sidebar.selectbox("Filtrer par catégorie", ["Toutes"] + categories_liste)
-uniquement_favoris = st.sidebar.checkbox("⭐ Afficher uniquement mes Coups de cœur", value=False)
 
 if st.sidebar.button("🔄 Rafraîchir la liste"):
     st.cache_data.clear()
@@ -148,8 +130,6 @@ for cat, count in stats_cat.items():
     if count > 0:
         st.sidebar.text(f"• {cat} : {count}")
 
-st.sidebar.text(f"• ⭐ Coups de cœur : {len(st.session_state.favoris)}")
-
 # --- RECHERCHE ET AFFICHAGE PRINCIPAL ---
 st.markdown("---")
 recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: crepe, gateau, oeuf, poulet...)")
@@ -166,11 +146,6 @@ else:
         nom = f['name']
         file_id = f['id']
         nom_norm = normaliser_texte(nom)
-        
-        # Filtre sur les favoris
-        est_favori = file_id in st.session_state.favoris
-        if uniquement_favoris and not est_favori:
-            continue
 
         # Détermination de la catégorie du fichier
         cat_du_fichier = "Autres"
@@ -200,44 +175,26 @@ else:
         if terme_recherche_clean and (terme_recherche_clean not in nom_clean and terme_recherche_clean not in nom_norm):
             continue
             
-        fichiers_filtrer.append((f, nom_affiche, est_favori))
+        fichiers_filtrer.append((f, nom_affiche))
 
-    # Tri : Les favoris s'affichent TOUJOURS en premier, puis ordre alphabétique
-    fichiers_filtrer = sorted(fichiers_filtrer, key=lambda x: (not x[2], x[1].lower()))
+    # Tri par ordre alphabétique
+    fichiers_filtrer = sorted(fichiers_filtrer, key=lambda x: x[1].lower())
 
     # Affichage du titre et des sous-titres
     nb_resultats = len(fichiers_filtrer)
-    if uniquement_favoris:
-        st.subheader(f"⭐ Vos recettes coup de cœur ({nb_resultats})")
-    elif categorie_filtre != "Toutes" or terme_recherche_clean:
+    if categorie_filtre != "Toutes" or terme_recherche_clean:
         st.subheader(f"📚 Recettes correspondantes ({nb_resultats} / {total_recettes})")
     else:
         st.subheader(f"📚 Toutes vos recettes ({total_recettes})")
 
     # Affichage de chaque recette
-    for f, nom_affiche, est_favori in fichiers_filtrer:
+    for f, nom_affiche in fichiers_filtrer:
         nom = f['name']
         file_id = f['id']
 
-        # Préfixe avec étoile si favori
-        titre_accordéon = f"⭐ {nom_affiche}" if est_favori else f"📖 {nom_affiche}"
+        titre_accordéon = f"📖 {nom_affiche}"
 
         with st.expander(titre_accordéon):
-            col_fav, col_actions = st.columns([1, 4])
-            
-            # Gestion du bouton favori avec sauvegarde automatique dans le navigateur
-            with col_fav:
-                if est_favori:
-                    if st.button("❌ Retirer des favoris", key=f"fav_del_{file_id}"):
-                        st.session_state.favoris.remove(file_id)
-                        cookie_manager.set("favoris_recettes", json.dumps(list(st.session_state.favoris)), key=f"c_del_{file_id}")
-                        st.rerun()
-                else:
-                    if st.button("⭐ Ajouter aux favoris", key=f"fav_add_{file_id}"):
-                        st.session_state.favoris.add(file_id)
-                        cookie_manager.set("favoris_recettes", json.dumps(list(st.session_state.favoris)), key=f"c_add_{file_id}")
-                        st.rerun()
-
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
             headers = {"Authorization": f"Bearer {creds.token}"}
             
