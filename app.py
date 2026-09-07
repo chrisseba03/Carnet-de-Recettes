@@ -123,11 +123,13 @@ if st.sidebar.button("Sauvegarder sur Google Drive"):
         media = MediaIoBaseUpload(io.BytesIO(nouveau_pdf.read()), mimetype='application/pdf')
         
         with st.spinner("Envoi vers Google Drive en cours..."):
-            drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        
-        st.sidebar.success(f"Recette '{titre_recette}' sauvegardée avec succès !")
-        st.cache_data.clear()
-        st.rerun()
+            try:
+                drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                st.sidebar.success(f"Recette '{titre_recette}' sauvegardée avec succès !")
+                st.cache_data.clear()
+                st.rerun()
+            except Exception as upload_err:
+                st.sidebar.error("Erreur lors de l'envoi : vérifiez que le compte de service a les droits 'Éditeur' sur le dossier Google Drive.")
     else:
         st.sidebar.error("Veuillez renseigner le titre et choisir un fichier PDF.")
 
