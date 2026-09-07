@@ -5,6 +5,7 @@ import unicodedata
 import re
 import json
 import pypdfium2 as pdfium
+import extra_streamlit_components as stx
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
@@ -13,7 +14,22 @@ import google.auth.transport.requests
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
 st.title("🍳 Le Carnet de Recettes de la Maison")
 
-# Normalisation du texte
+# Initialisation du gestionnaire de cookies pour la mémoire permanente sur tablette/PC
+cookie_manager = stx.CookieManager()
+
+# Chargement automatique des favoris enregistrés dans le navigateur
+favoris_cookie = cookie_manager.get(cookie="favoris_recettes")
+
+if "favoris" not in st.session_state:
+    if favoris_cookie:
+        try:
+            st.session_state.favoris = set(json.loads(favoris_cookie))
+        except Exception:
+            st.session_state.favoris = set()
+    else:
+        st.session_state.favoris = set()
+
+# Fonction pour normaliser le texte (supprime les accents, gère œ/æ et casse)
 def normaliser_texte(texte):
     if not texte:
         return ""
@@ -42,11 +58,6 @@ try:
 except Exception as e:
     st.error("Erreur de connexion à Google Drive. Vérifiez la configuration des Secrets.")
     st.stop()
-
-# --- GESTION LOCALE DES FAVORIS PAR NAVIGATEUR ---
-# Si vous préférez conserver les favoris dans la session courante sans plantage Drive :
-if "favoris" not in st.session_state:
-    st.session_state.favoris = set()
 
 # --- RECUPERATION DE TOUTES LES RECETTES ---
 @st.cache_data(ttl=600)
@@ -77,12 +88,13 @@ except Exception as err:
     st.error("Petite baisse de réseau avec Google Drive. Cliquez sur 'Rafraîchir la liste' dans le menu de gauche.")
     st.stop()
 
+# Filtre strict sur l'extension PDF
 fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
 categories_liste = ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
 
-# --- BARRE LATÉRALE ---
+# --- BARRE LATÉRALE : AJOUT & FILTRES ---
 st.sidebar.header("➕ Ajouter une recette")
 nouveau_pdf = st.sidebar.file_uploader("Importer un fichier PDF", type=["pdf"])
 titre_recette = st.sidebar.text_input("Nom de la recette")
@@ -91,7 +103,10 @@ cat_recette = st.sidebar.selectbox("Catégorie", categories_liste)
 if st.sidebar.button("Sauvegarder sur Google Drive"):
     if nouveau_pdf and titre_recette:
         nom_fichier = f"[{cat_recette}] {titre_recette.strip()}.pdf"
-        file_metadata = {'name': nom_fichier, 'parents': [FOLDER_ID]}
+        file_metadata = {
+            'name': nom_fichier,
+            'parents': [FOLDER_ID]
+        }
         media = MediaIoBaseUpload(io.BytesIO(nouveau_pdf.read()), mimetype='application/pdf')
         
         with st.spinner("Envoi vers Google Drive en cours..."):
@@ -112,7 +127,7 @@ if st.sidebar.button("🔄 Rafraîchir la liste"):
     st.cache_data.clear()
     st.rerun()
 
-# --- RECAPITULATIF DANS LA BARRE LATERALE ---
+# --- RECAPITULATIF PAR CATEGORIE DANS LA BARRE LATERALE ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("📊 Répartition")
 stats_cat = {cat: 0 for cat in categories_liste}
@@ -141,20 +156,23 @@ recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeh
 st.markdown("---")
 
 if not fichiers_pdf:
-    st.info("Aucune recette au format PDF trouvée sur votre Google Drive.")
+    st.info("Aucune recette au format PDF trouvée sur votre Google Drive. Ajoutez votre première recette depuis le menu à gauche !")
 else:
     terme_recherche_clean = normaliser_texte(recherche)
-    fichiers_filtrer = []
     
+    # Pré-filtrage des recettes
+    fichiers_filtrer = []
     for f in fichiers_pdf:
         nom = f['name']
         file_id = f['id']
         nom_norm = normaliser_texte(nom)
         
+        # Filtre sur les favoris
         est_favori = file_id in st.session_state.favoris
         if uniquement_favoris and not est_favori:
             continue
 
+        # Détermination de la catégorie du fichier
         cat_du_fichier = "Autres"
         for cat in categories_liste:
             cat_norm = normaliser_texte(cat)
@@ -162,26 +180,33 @@ else:
                 cat_du_fichier = cat
                 break
                 
+        # Filtre de catégorie
         if categorie_filtre != "Toutes" and cat_du_fichier != categorie_filtre:
             continue
             
+        # Nettoyage du titre affiché
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
         for cat in categories_liste:
             pattern = re.compile(re.escape(f"[{cat}]"), re.IGNORECASE)
             nom_affiche = pattern.sub("", nom_affiche)
+            pattern_acc = re.compile(re.escape(f"[{unicodedata.normalize('NFD', cat)}]"), re.IGNORECASE)
+            nom_affiche = pattern_acc.sub("", nom_affiche)
             
         nom_affiche = nom_affiche.replace("[Entrées]", "").replace("[ENTREES]", "").replace("[entrées]", "").strip()
         nom_affiche = nom_affiche.replace('_', ' ').strip()
         
         nom_clean = normaliser_texte(nom_affiche)
+        
         if terme_recherche_clean and (terme_recherche_clean not in nom_clean and terme_recherche_clean not in nom_norm):
             continue
             
         fichiers_filtrer.append((f, nom_affiche, est_favori))
 
+    # Tri : Les favoris s'affichent TOUJOURS en premier, puis ordre alphabétique
     fichiers_filtrer = sorted(fichiers_filtrer, key=lambda x: (not x[2], x[1].lower()))
-    nb_resultats = len(fichiers_filtrer)
 
+    # Affichage du titre et des sous-titres
+    nb_resultats = len(fichiers_filtrer)
     if uniquement_favoris:
         st.subheader(f"⭐ Vos recettes coup de cœur ({nb_resultats})")
     elif categorie_filtre != "Toutes" or terme_recherche_clean:
@@ -189,22 +214,28 @@ else:
     else:
         st.subheader(f"📚 Toutes vos recettes ({total_recettes})")
 
+    # Affichage de chaque recette
     for f, nom_affiche, est_favori in fichiers_filtrer:
         nom = f['name']
         file_id = f['id']
 
+        # Préfixe avec étoile si favori
         titre_accordéon = f"⭐ {nom_affiche}" if est_favori else f"📖 {nom_affiche}"
 
         with st.expander(titre_accordéon):
             col_fav, col_actions = st.columns([1, 4])
+            
+            # Gestion du bouton favori avec sauvegarde automatique dans le navigateur
             with col_fav:
                 if est_favori:
                     if st.button("❌ Retirer des favoris", key=f"fav_del_{file_id}"):
                         st.session_state.favoris.remove(file_id)
+                        cookie_manager.set("favoris_recettes", json.dumps(list(st.session_state.favoris)), key=f"c_del_{file_id}")
                         st.rerun()
                 else:
                     if st.button("⭐ Ajouter aux favoris", key=f"fav_add_{file_id}"):
                         st.session_state.favoris.add(file_id)
+                        cookie_manager.set("favoris_recettes", json.dumps(list(st.session_state.favoris)), key=f"c_add_{file_id}")
                         st.rerun()
 
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
