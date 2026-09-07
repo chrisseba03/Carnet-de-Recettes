@@ -3,6 +3,7 @@ import io
 import requests
 import unicodedata
 import re
+import base64
 import pypdfium2 as pdfium
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -27,7 +28,7 @@ def normaliser_texte(texte):
     texte = re.sub(r'[^a-z0-9]', '', texte)
     return texte
 
-# Client d'authentification
+# Client d'authentification Google Drive
 @st.cache_resource
 def get_drive_service():
     creds = service_account.Credentials.from_service_account_info(
@@ -227,10 +228,28 @@ else:
             headers = {"Authorization": f"Bearer {creds.token}"}
             
             if st.button(f"👁️ Afficher la recette", key=f"view_{file_id}"):
-                with st.spinner("Chargement et affichage des pages..."):
+                with st.spinner("Chargement de la recette..."):
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
                         try:
+                            # Bouton pour ouvrir en plein écran et autoriser le zoom tactile
+                            base64_pdf = base64.b64encode(res.content).decode('utf-8')
+                            pdf_display = f'''
+                                <a href="data:application/pdf;base64,{base64_pdf}" target="_blank" style="
+                                    display: inline-block;
+                                    padding: 10px 18px;
+                                    margin-bottom: 15px;
+                                    background-color: #2e7d32;
+                                    color: white;
+                                    text-decoration: none;
+                                    font-weight: bold;
+                                    border-radius: 8px;
+                                    text-align: center;
+                                ">🔍 Ouvrir en grand / Zoom tactile (Plein écran)</a>
+                            '''
+                            st.markdown(pdf_display, unsafe_allow_html=True)
+
+                            # Rendu de l'image de la recette dans la page
                             pdf_file = pdfium.PdfDocument(res.content)
                             for page_index in range(len(pdf_file)):
                                 image = pdf_file[page_index].render(scale=2).to_pil()
