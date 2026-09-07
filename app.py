@@ -224,12 +224,12 @@ else:
                         st.rerun()
 
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
-            preview_url = f"https://drive.google.com/file/d/{file_id}/view"
+            preview_url = f"https://drive.google.com/file/d/{file_id}/preview"
             headers = {"Authorization": f"Bearer {creds.token}"}
             
             if st.button(f"👁️ Afficher la recette", key=f"view_{file_id}"):
-                # Lien direct vers le lecteur Google Drive ouvrant un nouvel onglet parfaitement lisible et zoomable
-                st.link_button("🔍 Plein écran & Zoom tactile (Google Drive)", preview_url)
+                # Lien de prévisualisation optimisé pour tablette (navigateur web)
+                st.link_button("🔍 Plein écran & Zoom tactile", preview_url)
 
                 with st.spinner("Chargement de la recette..."):
                     res = requests.get(download_url, headers=headers)
