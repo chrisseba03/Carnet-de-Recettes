@@ -12,9 +12,12 @@ import google.auth.transport.requests
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="🍳", layout="wide")
 st.title("🍳 Le Carnet de Recettes de la Maison")
 
-# Initialisation du stockage des favoris dans la session utilisateur
+# Initialisation des variables de session (favoris et échelle de zoom)
 if "favoris" not in st.session_state:
     st.session_state.favoris = set()
+
+if "echelle_zoom" not in st.session_state:
+    st.session_state.echelle_zoom = {}
 
 # Fonction pour normaliser le texte (supprime les accents, gère œ/æ et casse)
 def normaliser_texte(texte):
@@ -159,7 +162,7 @@ else:
         if uniquement_favoris and not est_favori:
             continue
 
-        # Détermination de la catégorie du fichier (Insensible aux accents et majuscules)
+        # Détermination de la catégorie du fichier
         cat_du_fichier = "Autres"
         for cat in categories_liste:
             cat_norm = normaliser_texte(cat)
@@ -206,7 +209,10 @@ else:
         nom = f['name']
         file_id = f['id']
 
-        # Préfixe avec étoile si favori
+        # Initialisation du niveau de zoom individuel
+        if file_id not in st.session_state.echelle_zoom:
+            st.session_state.echelle_zoom[file_id] = 2.0  # Résolution standard (100%)
+
         titre_accordéon = f"⭐ {nom_affiche}" if est_favori else f"📖 {nom_affiche}"
 
         with st.expander(titre_accordéon):
@@ -224,20 +230,31 @@ else:
                         st.rerun()
 
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
-            preview_url = f"https://drive.google.com/file/d/{file_id}/preview"
             headers = {"Authorization": f"Bearer {creds.token}"}
             
             if st.button(f"👁️ Afficher la recette", key=f"view_{file_id}"):
-                # Lien de prévisualisation optimisé pour tablette (navigateur web)
-                st.link_button("🔍 Plein écran & Zoom tactile", preview_url)
+                
+                # Boutons de réglage du zoom direct pour tablette
+                col_z1, col_z2, col_z3 = st.columns([1, 1, 2])
+                with col_z1:
+                    if st.button("🔎 Zoomer (+)", key=f"z_in_{file_id}"):
+                        st.session_state.echelle_zoom[file_id] += 1.0
+                        st.rerun()
+                with col_z2:
+                    if st.button("🔍 Réduire (-)", key=f"z_out_{file_id}"):
+                        if st.session_state.echelle_zoom[file_id] > 1.5:
+                            st.session_state.echelle_zoom[file_id] -= 1.0
+                            st.rerun()
 
                 with st.spinner("Chargement de la recette..."):
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
                         try:
                             pdf_file = pdfium.PdfDocument(res.content)
+                            echelle_actuelle = st.session_state.echelle_zoom[file_id]
+                            
                             for page_index in range(len(pdf_file)):
-                                image = pdf_file[page_index].render(scale=2).to_pil()
+                                image = pdf_file[page_index].render(scale=echelle_actuelle).to_pil()
                                 st.image(image, use_container_width=True)
                         except Exception as e:
                             st.error("Impossible d'afficher l'aperçu du PDF.")
