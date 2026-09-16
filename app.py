@@ -12,7 +12,7 @@ import google.auth.transport.requests
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="👨‍🍳", layout="wide")
 st.title("👨‍🍳 Le Carnet de Recettes de la Maison")
 
-# Normalisation avancée du texte
+# Normalisation du texte SANS détruire les crochets
 def normaliser_texte(texte):
     if not texte:
         return ""
@@ -20,8 +20,12 @@ def normaliser_texte(texte):
     texte = unicodedata.normalize('NFD', texte)
     texte = "".join(c for c in texte if unicodedata.category(c) != 'Mn')
     texte = texte.lower()
-    texte = re.sub(r'[^a-z0-9]', '', texte)
     return texte
+
+# Nettoyage strict pour la recherche par mot-clé (sans caractères spéciaux)
+def normaliser_mot_cle(texte):
+    texte = normaliser_texte(texte)
+    return re.sub(r'[^a-z0-9]', '', texte)
 
 # Connexion Google Drive
 @st.cache_resource
@@ -80,7 +84,7 @@ except Exception:
 fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
-# Ordre des catégories avec Charcuterie sous Entrées
+# Ordre des catégories
 categories_liste = ["Entrées", "Charcuterie", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
 
 # --- BARRE LATÉRALE : OPTIONS ---
@@ -101,7 +105,8 @@ for f in fichiers_pdf:
     trouve = False
     for cat in categories_liste:
         cat_norm = normaliser_texte(cat)
-        if f"[{cat_norm}]" in nom_norm or cat_norm in nom_norm[:len(cat_norm)+2]:
+        # Vérifie si le nom contient la catégorie avec ou sans crochets
+        if f"[{cat_norm}]" in nom_norm or cat_norm in nom_norm:
             stats_cat[cat] += 1
             trouve = True
     if not trouve:
@@ -119,7 +124,7 @@ st.markdown("---")
 if not fichiers_pdf:
     st.info("Aucune recette au format PDF trouvée sur votre Google Drive.")
 else:
-    terme_recherche_clean = normaliser_texte(recherche)
+    terme_recherche_clean = normaliser_mot_cle(recherche)
     fichiers_filtrer = []
     
     for f in fichiers_pdf:
@@ -127,34 +132,28 @@ else:
         file_id = f['id']
         nom_norm = normaliser_texte(nom)
 
-        # Détection de TOUTES les catégories présentes dans le nom du fichier
+        # Extraction de TOUTES les catégories présentes dans le nom
         categories_du_fichier = []
         for cat in categories_liste:
             cat_norm = normaliser_texte(cat)
-            if f"[{cat_norm}]" in nom_norm or cat_norm in nom_norm[:len(cat_norm)+2]:
+            if f"[{cat_norm}]" in nom_norm or cat_norm in nom_norm:
                 categories_du_fichier.append(cat)
                 
         if not categories_du_fichier:
             categories_du_fichier = ["Autres"]
                 
-        # Vérification du filtre sélectionné
+        # Filtre sur la catégorie sélectionnée
         if categorie_filtre != "Toutes" and categorie_filtre not in categories_du_fichier:
             continue
             
-        # Nettoyage du nom pour l'affichage (suppression de toutes les étiquettes de catégories)
+        # Nettoyage du titre pour l'affichage (supprime toutes les balises [Catégorie])
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
-        for cat in categories_liste:
-            pattern = re.compile(re.escape(f"[{cat}]"), re.IGNORECASE)
-            nom_affiche = pattern.sub("", nom_affiche)
-            pattern_acc = re.compile(re.escape(f"[{unicodedata.normalize('NFD', cat)}]"), re.IGNORECASE)
-            nom_affiche = pattern_acc.sub("", nom_affiche)
-            
-        nom_affiche = nom_affiche.replace("[Entrées]", "").replace("[ENTREES]", "").replace("[entrées]", "").strip()
+        nom_affiche = re.sub(r'\[.*?\]', '', nom_affiche).strip() # Retire tout ce qui est entre crochets
         nom_affiche = nom_affiche.replace('_', ' ').strip()
         
-        # Recherche tolérante par mot-clé
-        nom_clean = normaliser_texte(nom_affiche)
-        if terme_recherche_clean and (terme_recherche_clean not in nom_clean and terme_recherche_clean not in nom_norm):
+        # Filtre de recherche par mot-clé
+        nom_clean = normaliser_mot_cle(nom_affiche)
+        if terme_recherche_clean and (terme_recherche_clean not in nom_clean):
             continue
             
         fichiers_filtrer.append((f, nom_affiche))
