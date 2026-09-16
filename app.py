@@ -27,12 +27,27 @@ def normaliser_mot_cle(texte):
     texte = normaliser_texte(texte)
     return re.sub(r'[^a-z0-9]', '', texte)
 
-# Normalisation intelligente des catégories (ignore singulier/pluriel, accents, casse)
-def normaliser_categorie(cat_nom):
-    clean = normaliser_mot_cle(cat_nom)
-    if clean.endswith('s') and len(clean) > 3:
-        clean = clean[:-1]  # Supprime le 's' final pour comparer au singulier
-    return clean
+# Dictionnaire de correspondance intelligente (Synonymes, accents, pluriels)
+MAPPING_CATEGORIES = {
+    "Entrées": ["entree", "entrees"],
+    "Charcuterie": ["charcuterie", "charcuteries", "salaison", "salaisons"],
+    "Plats": ["plat", "plats"],
+    "Desserts": ["dessert", "desserts", "douceur", "douceurs"],
+    "Pains & Pâtisseries": ["pain", "pains", "patisserie", "patisseries", "boulangerie", "brioche", "brioches"],
+    "Vins & Spiritueux": ["vin", "vins", "spiritueux", "boisson", "boissons", "apero", "aperitif", "aperitifs", "cave", "cocktail", "cocktails"]
+}
+
+def identifier_categories_balise(balise):
+    clean = normaliser_mot_cle(balise)
+    cats_trouvees = []
+    
+    for cat_officielle, mots_cles in MAPPING_CATEGORIES.items():
+        for mot in mots_cles:
+            if clean == mot or clean == mot + "s" or mot in clean:
+                cats_trouvees.append(cat_officielle)
+                break
+                
+    return cats_trouvees
 
 # Connexion Google Drive
 @st.cache_resource
@@ -91,8 +106,8 @@ except Exception:
 fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
-# Liste officielle des catégories
-categories_liste = ["Entrées", "Charcuterie", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
+# Liste officielle affichée dans le menu de sélection
+categories_liste = ["Entrées", "Charcuterie", "Plats", "Desserts", "Pains & Pâtisseries", "Vins & Spiritueux", "Autres"]
 
 # --- BARRE LATÉRALE : OPTIONS ---
 st.sidebar.header("⚙️ Options")
@@ -109,20 +124,18 @@ stats_cat = {cat: 0 for cat in categories_liste}
 
 for f in fichiers_pdf:
     nom_f = f['name']
-    # Recherche de tout ce qui est entre crochets dans le nom de fichier
-    balises_trouvees = re.findall(r'\[(.*?)\]', nom_f)
-    balises_clean = [normaliser_categorie(b) for b in balises_trouvees]
+    balises = re.findall(r'\[(.*?)\]', nom_f)
+    cats_du_fichier = set()
     
-    trouve = False
-    for cat in categories_liste:
-        cat_cle = normaliser_categorie(cat)
-        # Vérification si la catégorie est présente dans l'une des balises entre crochets
-        if cat_cle in balises_clean:
-            stats_cat[cat] += 1
-            trouve = True
+    for b in balises:
+        for c in identifier_categories_balise(b):
+            cats_du_fichier.add(c)
             
-    if not trouve:
+    if not cats_du_fichier:
         stats_cat["Autres"] += 1
+    else:
+        for c in cats_du_fichier:
+            stats_cat[c] += 1
 
 for cat, count in stats_cat.items():
     if count > 0:
@@ -130,7 +143,7 @@ for cat, count in stats_cat.items():
 
 # --- AFFICHAGE PRINCIPAL ---
 st.markdown("---")
-recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: pate, crepe, gateau, merguez...)")
+recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: pate, crepe, gateau, vin, merguez...)")
 st.markdown("---")
 
 if not fichiers_pdf:
@@ -143,29 +156,27 @@ else:
         nom = f['name']
         file_id = f['id']
 
-        # Extraction et tolérance des catégories entre crochets
-        balises_trouvees = re.findall(r'\[(.*?)\]', nom)
-        balises_clean = [normaliser_categorie(b) for b in balises_trouvees]
+        # Identification de toutes les catégories associées au fichier
+        balises = re.findall(r'\[(.*?)\]', nom)
+        categories_du_fichier = set()
         
-        categories_du_fichier = []
-        for cat in categories_liste:
-            cat_cle = normaliser_categorie(cat)
-            if cat_cle in balises_clean:
-                categories_du_fichier.append(cat)
+        for b in balises:
+            for c in identifier_categories_balise(b):
+                categories_du_fichier.add(c)
                 
         if not categories_du_fichier:
-            categories_du_fichier = ["Autres"]
+            categories_du_fichier.add("Autres")
                 
-        # Filtrage par catégorie sélectionnée
+        # Filtre sur la catégorie sélectionnée
         if categorie_filtre != "Toutes" and categorie_filtre not in categories_du_fichier:
             continue
             
-        # Nettoyage du titre pour l'affichage (retire tout ce qui est entre crochets)
+        # Nettoyage propre du titre pour l'affichage principal
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
         nom_affiche = re.sub(r'\[.*?\]', '', nom_affiche).strip()
         nom_affiche = nom_affiche.replace('_', ' ').strip()
         
-        # Filtrage par mot-clé de recherche
+        # Filtre de recherche tolérante par mot-clé
         nom_clean = normaliser_mot_cle(nom_affiche)
         if terme_recherche_clean and (terme_recherche_clean not in nom_clean):
             continue
