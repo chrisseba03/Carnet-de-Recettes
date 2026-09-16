@@ -12,7 +12,7 @@ import google.auth.transport.requests
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="👨‍🍳", layout="wide")
 st.title("👨‍🍳 Le Carnet de Recettes de la Maison")
 
-# Normalisation du texte SANS détruire les crochets
+# Normalisation du texte pour la comparaison (sans accent, minuscules)
 def normaliser_texte(texte):
     if not texte:
         return ""
@@ -22,10 +22,17 @@ def normaliser_texte(texte):
     texte = texte.lower()
     return texte
 
-# Nettoyage strict pour la recherche par mot-clé (sans caractères spéciaux)
+# Nettoyage strict pour la recherche par mot-clé (lettres et chiffres uniquement)
 def normaliser_mot_cle(texte):
     texte = normaliser_texte(texte)
     return re.sub(r'[^a-z0-9]', '', texte)
+
+# Normalisation intelligente des catégories (ignore singulier/pluriel, accents, casse)
+def normaliser_categorie(cat_nom):
+    clean = normaliser_mot_cle(cat_nom)
+    if clean.endswith('s') and len(clean) > 3:
+        clean = clean[:-1]  # Supprime le 's' final pour comparer au singulier
+    return clean
 
 # Connexion Google Drive
 @st.cache_resource
@@ -84,7 +91,7 @@ except Exception:
 fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
-# Ordre des catégories
+# Liste officielle des catégories
 categories_liste = ["Entrées", "Charcuterie", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
 
 # --- BARRE LATÉRALE : OPTIONS ---
@@ -101,14 +108,19 @@ st.sidebar.subheader("📊 Répartition")
 stats_cat = {cat: 0 for cat in categories_liste}
 
 for f in fichiers_pdf:
-    nom_norm = normaliser_texte(f['name'])
+    nom_f = f['name']
+    # Recherche de tout ce qui est entre crochets dans le nom de fichier
+    balises_trouvees = re.findall(r'\[(.*?)\]', nom_f)
+    balises_clean = [normaliser_categorie(b) for b in balises_trouvees]
+    
     trouve = False
     for cat in categories_liste:
-        cat_norm = normaliser_texte(cat)
-        # Vérifie si le nom contient la catégorie avec ou sans crochets
-        if f"[{cat_norm}]" in nom_norm or cat_norm in nom_norm:
+        cat_cle = normaliser_categorie(cat)
+        # Vérification si la catégorie est présente dans l'une des balises entre crochets
+        if cat_cle in balises_clean:
             stats_cat[cat] += 1
             trouve = True
+            
     if not trouve:
         stats_cat["Autres"] += 1
 
@@ -130,28 +142,30 @@ else:
     for f in fichiers_pdf:
         nom = f['name']
         file_id = f['id']
-        nom_norm = normaliser_texte(nom)
 
-        # Extraction de TOUTES les catégories présentes dans le nom
+        # Extraction et tolérance des catégories entre crochets
+        balises_trouvees = re.findall(r'\[(.*?)\]', nom)
+        balises_clean = [normaliser_categorie(b) for b in balises_trouvees]
+        
         categories_du_fichier = []
         for cat in categories_liste:
-            cat_norm = normaliser_texte(cat)
-            if f"[{cat_norm}]" in nom_norm or cat_norm in nom_norm:
+            cat_cle = normaliser_categorie(cat)
+            if cat_cle in balises_clean:
                 categories_du_fichier.append(cat)
                 
         if not categories_du_fichier:
             categories_du_fichier = ["Autres"]
                 
-        # Filtre sur la catégorie sélectionnée
+        # Filtrage par catégorie sélectionnée
         if categorie_filtre != "Toutes" and categorie_filtre not in categories_du_fichier:
             continue
             
-        # Nettoyage du titre pour l'affichage (supprime toutes les balises [Catégorie])
+        # Nettoyage du titre pour l'affichage (retire tout ce qui est entre crochets)
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
-        nom_affiche = re.sub(r'\[.*?\]', '', nom_affiche).strip() # Retire tout ce qui est entre crochets
+        nom_affiche = re.sub(r'\[.*?\]', '', nom_affiche).strip()
         nom_affiche = nom_affiche.replace('_', ' ').strip()
         
-        # Filtre de recherche par mot-clé
+        # Filtrage par mot-clé de recherche
         nom_clean = normaliser_mot_cle(nom_affiche)
         if terme_recherche_clean and (terme_recherche_clean not in nom_clean):
             continue
