@@ -80,8 +80,8 @@ except Exception:
 fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
-# Ajout de la catégorie "Charcuterie"
-categories_liste = ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Charcuterie", "Autres"]
+# Liste des catégories avec Charcuterie juste sous Entrées
+categories_liste = ["Entrées", "Charcuterie", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
 
 # --- BARRE LATÉRALE : OPTIONS ---
 st.sidebar.header("⚙️ Options")
