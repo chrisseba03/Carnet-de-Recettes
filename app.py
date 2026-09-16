@@ -12,7 +12,7 @@ import google.auth.transport.requests
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="👨‍🍳", layout="wide")
 st.title("👨‍🍳 Le Carnet de Recettes de la Maison")
 
-# Normalisation avancée du texte (suppression des accents, majuscules et caractères spéciaux)
+# Normalisation avancée du texte
 def normaliser_texte(texte):
     if not texte:
         return ""
@@ -80,7 +80,7 @@ except Exception:
 fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
-# Liste des catégories avec Charcuterie juste sous Entrées
+# Ordre des catégories avec Charcuterie sous Entrées
 categories_liste = ["Entrées", "Charcuterie", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
 
 # --- BARRE LATÉRALE : OPTIONS ---
@@ -104,7 +104,6 @@ for f in fichiers_pdf:
         if f"[{cat_norm}]" in nom_norm or cat_norm in nom_norm[:len(cat_norm)+2]:
             stats_cat[cat] += 1
             trouve = True
-            break
     if not trouve:
         stats_cat["Autres"] += 1
 
@@ -128,16 +127,21 @@ else:
         file_id = f['id']
         nom_norm = normaliser_texte(nom)
 
-        cat_du_fichier = "Autres"
+        # Détection de TOUTES les catégories présentes dans le nom du fichier
+        categories_du_fichier = []
         for cat in categories_liste:
             cat_norm = normaliser_texte(cat)
             if f"[{cat_norm}]" in nom_norm or cat_norm in nom_norm[:len(cat_norm)+2]:
-                cat_du_fichier = cat
-                break
+                categories_du_fichier.append(cat)
                 
-        if categorie_filtre != "Toutes" and cat_du_fichier != categorie_filtre:
+        if not categories_du_fichier:
+            categories_du_fichier = ["Autres"]
+                
+        # Vérification du filtre sélectionné
+        if categorie_filtre != "Toutes" and categorie_filtre not in categories_du_fichier:
             continue
             
+        # Nettoyage du nom pour l'affichage (suppression de toutes les étiquettes de catégories)
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
         for cat in categories_liste:
             pattern = re.compile(re.escape(f"[{cat}]"), re.IGNORECASE)
@@ -148,9 +152,9 @@ else:
         nom_affiche = nom_affiche.replace("[Entrées]", "").replace("[ENTREES]", "").replace("[entrées]", "").strip()
         nom_affiche = nom_affiche.replace('_', ' ').strip()
         
-        # Recherche tolérante
+        # Recherche tolérante par mot-clé
         nom_clean = normaliser_texte(nom_affiche)
-        if terme_recherche_clean and (terme_recherche_clean not in nom_clean):
+        if terme_recherche_clean and (terme_recherche_clean not in nom_clean and terme_recherche_clean not in nom_norm):
             continue
             
         fichiers_filtrer.append((f, nom_affiche))
@@ -171,7 +175,6 @@ else:
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
             headers = {"Authorization": f"Bearer {creds.token}"}
 
-            # Boutons côte à côte
             col_btn1, col_btn2 = st.columns([1, 1])
 
             with col_btn1:
