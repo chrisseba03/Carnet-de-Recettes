@@ -12,7 +12,7 @@ import google.auth.transport.requests
 st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="👨‍🍳", layout="wide")
 st.title("👨‍🍳 Le Carnet de Recettes de la Maison")
 
-# Normalisation avancée du texte
+# Normalisation avancée du texte (suppression des accents, majuscules et caractères spéciaux)
 def normaliser_texte(texte):
     if not texte:
         return ""
@@ -80,7 +80,8 @@ except Exception:
 fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
-categories_liste = ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Autres"]
+# Ajout de la catégorie "Charcuterie"
+categories_liste = ["Entrées", "Plats", "Desserts", "Pains & Pâtisseries", "Charcuterie", "Autres"]
 
 # --- BARRE LATÉRALE : OPTIONS ---
 st.sidebar.header("⚙️ Options")
@@ -113,7 +114,7 @@ for cat, count in stats_cat.items():
 
 # --- AFFICHAGE PRINCIPAL ---
 st.markdown("---")
-recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: pate, crepe, gateau, poulet...)")
+recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: pate, crepe, gateau, merguez...)")
 st.markdown("---")
 
 if not fichiers_pdf:
@@ -147,6 +148,7 @@ else:
         nom_affiche = nom_affiche.replace("[Entrées]", "").replace("[ENTREES]", "").replace("[entrées]", "").strip()
         nom_affiche = nom_affiche.replace('_', ' ').strip()
         
+        # Recherche tolérante
         nom_clean = normaliser_texte(nom_affiche)
         if terme_recherche_clean and (terme_recherche_clean not in nom_clean):
             continue
@@ -169,14 +171,13 @@ else:
             download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
             headers = {"Authorization": f"Bearer {creds.token}"}
 
-            # Création de deux colonnes côte à côte pour les boutons
+            # Boutons côte à côte
             col_btn1, col_btn2 = st.columns([1, 1])
 
             with col_btn1:
                 voir_recette = st.button("👁️ Afficher la recette", key=f"view_{file_id}")
 
             with col_btn2:
-                # Fonction de téléchargement direct
                 def telecharger_fichier(url, h):
                     r = requests.get(url, headers=h)
                     return r.content if r.status_code == 200 else None
@@ -189,7 +190,6 @@ else:
                     key=f"dl_{file_id}"
                 )
 
-            # Affichage de l'aperçu si le bouton "Afficher" est cliqué
             if voir_recette:
                 with st.spinner("Chargement de l'aperçu..."):
                     res = requests.get(download_url, headers=headers)
