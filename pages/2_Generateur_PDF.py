@@ -1,236 +1,257 @@
 import streamlit as st
-import io
-import requests
-import unicodedata
+import base64
 import re
-import json
+from weasyprint import HTML
 import pypdfium2 as pdfium
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-import google.auth.transport.requests
 
-st.set_page_config(page_title="Nos Recettes de Cuisine", page_icon="👨‍🍳", layout="wide")
-st.title("👨‍🍳 Le Carnet de Recettes de la Maison")
+st.set_page_config(page_title="Générateur de Fiches PDF - Pro", page_icon="✨", layout="wide")
 
-# Normalisation du texte pour la comparaison (sans accent, minuscules)
-def normaliser_texte(texte):
-    if not texte:
-        return ""
-    texte = texte.replace("œ", "oe").replace("Œ", "oe").replace("æ", "ae").replace("Æ", "ae")
-    texte = unicodedata.normalize('NFD', texte)
-    texte = "".join(c for c in texte if unicodedata.category(c) != 'Mn')
-    texte = texte.lower()
-    return texte
+st.markdown("""
+    <div style="background-color: #6b2d18; padding: 20px; border-radius: 10px; color: white; text-align: center; margin-bottom: 20px;">
+        <h1 style="margin: 0; font-size: 24px;">✨ Générateur Intelligent de Fiches Recettes</h1>
+        <p style="margin: 5px 0 0 0; font-size: 14px; font-style: italic;">Pour une utilisation personnelle et gourmande</p>
+    </div>
+""", unsafe_allow_html=True)
 
-# Nettoyage strict pour la recherche par mot-clé (lettres et chiffres uniquement)
-def normaliser_mot_cle(texte):
-    texte = normaliser_texte(texte)
-    return re.sub(r'[^a-z0-9]', '', texte)
-
-# Dictionnaire de correspondance intelligente (Synonymes, accents, pluriels harmonisés)
-MAPPING_CATEGORIES = {
-    "Entrées": ["entree", "entrees"],
-    "Charcuteries": ["charcuterie", "charcuteries", "salaison", "salaisons"],
-    "Sauces": ["sauce", "sauces", "vinaigrette", "vinaigrettes", "marinade", "marinades", "condiment", "condiments"],
-    "Plats": ["plat", "plats"],
-    "Desserts": ["dessert", "desserts", "douceur", "douceurs"],
-    "Pains & Pâtisseries": ["pain", "pains", "patisserie", "patisseries", "boulangerie", "brioche", "brioches"],
-    "Vins & Spiritueux": ["vin", "vins", "spiritueux", "boisson", "boissons", "apero", "aperitif", "aperitifs", "cave", "cocktail", "cocktails"]
-}
-
-def identifier_categories_balise(balise):
-    clean = normaliser_mot_cle(balise)
-    cats_trouvees = []
+with st.form("recipe_form"):
+    st.subheader("1. 📂 Source de la recette (Import ou Texte libre)")
     
-    for cat_officielle, mots_cles in MAPPING_CATEGORIES.items():
-        for mot in mots_cles:
-            if clean == mot or clean == mot + "s" or mot in clean:
-                cats_trouvees.append(cat_officielle)
-                break
-                
-    return cats_trouvees
-
-# Connexion Google Drive
-@st.cache_resource
-def get_drive_service():
-    scopes = [
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/drive'
-    ]
-    creds = service_account.Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=scopes
+    uploaded_source_file = st.file_uploader(
+        "Déposez un fichier PDF ou Texte (.txt) source (Optionnel)", 
+        type=["pdf", "txt"],
+        help="L'application analyse et structure automatiquement votre recette !"
     )
-    session = requests.Session()
-    auth_request = google.auth.transport.requests.Request(session=session)
-    creds.refresh(auth_request)
-    return build('drive', 'v3', credentials=creds), creds
-
-try:
-    drive_service, creds = get_drive_service()
-    FOLDER_ID = st.secrets["FOLDER_ID"]
-except Exception as e:
-    st.error("Erreur de connexion à Google Drive. Vérifiez la configuration dans les Secrets.")
-    st.stop()
-
-# --- RECUPERATION DES RECETTES ---
-@st.cache_data(ttl=600)
-def get_all_recipes():
-    fichiers = []
-    page_token = None
-    query = f"'{FOLDER_ID}' in parents and trashed = false and mimeType = 'application/pdf'"
     
-    while True:
-        response = drive_service.files().list(
-            q=query,
-            fields="nextPageToken, files(id, name, mimeType)",
-            pageSize=1000,
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
-            pageToken=page_token
-        ).execute()
-        
-        fichiers.extend(response.get('files', []))
-        page_token = response.get('nextPageToken', None)
-        
-        if page_token is None:
-            break
-            
-    return fichiers
-
-try:
-    fichiers_bruts = get_all_recipes()
-except Exception:
-    st.error("Petite baisse de réseau avec Google Drive. Cliquez sur 'Rafraîchir la liste'.")
-    st.stop()
-
-fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
-total_recettes = len(fichiers_pdf)
-
-# Liste officielle affichée dans le menu de sélection (parfaitement alignée avec le mapping)
-categories_liste = ["Entrées", "Charcuteries", "Sauces", "Plats", "Desserts", "Pains & Pâtisseries", "Vins & Spiritueux", "Autres"]
-
-# --- BARRE LATÉRALE : OPTIONS ---
-st.sidebar.header("⚙️ Options")
-categorie_filtre = st.sidebar.selectbox("Filtrer par catégorie", ["Toutes"] + categories_liste)
-
-if st.sidebar.button("🔄 Rafraîchir la liste"):
-    st.cache_data.clear()
-    st.rerun()
-
-# --- BARRE LATÉRALE : RÉPARTITION ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("📊 Répartition")
-stats_cat = {cat: 0 for cat in categories_liste}
-
-for f in fichiers_pdf:
-    nom_f = f['name']
-    balises = re.findall(r'\[(.*?)\]', nom_f)
-    cats_du_fichier = set()
+    recipe_text = st.text_area(
+        "Ou collez votre texte brut ici :",
+        height=200,
+        placeholder="Ex: SAUCE POUR NEMS\nIngrédients :\n- ...\nPréparation :\n..."
+    )
     
-    for b in balises:
-        for c in identifier_categories_balise(b):
-            cats_du_fichier.add(c)
-            
-    if not cats_du_fichier:
-        stats_cat["Autres"] += 1
-    else:
-        for c in cats_du_fichier:
-            stats_cat[c] += 1
-
-for cat, count in stats_cat.items():
-    if count > 0:
-        st.sidebar.text(f"• {cat} : {count}")
-
-# --- AFFICHAGE PRINCIPAL ---
-st.markdown("---")
-recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: pate, crepe, gateau, vin, sauce, merguez...)")
-st.markdown("---")
-
-if not fichiers_pdf:
-    st.info("Aucune recette au format PDF trouvée sur votre Google Drive.")
-else:
-    terme_recherche_clean = normaliser_mot_cle(recherche)
-    fichiers_filtrer = []
+    st.subheader("2. 🏷️ Catégorie pour le nom du fichier")
+    categorie_choisie = st.selectbox(
+        "Choisissez la catégorie :",
+        ["Entrée", "Plat", "Dessert", "Sauce", "Apéritif", "Boisson", "Divers"]
+    )
     
-    for f in fichiers_pdf:
-        nom = f['name']
-        file_id = f['id']
+    st.subheader("3. 📸 Photo de la Recette (Optionnel)")
+    uploaded_image = st.file_uploader("Choisissez une image (JPG, PNG)", type=["jpg", "jpeg", "png"])
+    
+    submitted = st.form_submit_button("Générer la Fiche PDF")
 
-        # Identification de toutes les catégories associées au fichier
-        balises = re.findall(r'\[(.*?)\]', nom)
-        categories_du_fichier = set()
+# Récupération et traitement du texte
+texte_brut = recipe_text
+if uploaded_source_file is not None:
+    if uploaded_source_file.name.endswith('.txt'):
+        try:
+            texte_brut = uploaded_source_file.read().decode("utf-8")
+        except:
+            texte_brut = uploaded_source_file.read().decode("latin-1")
+    elif uploaded_source_file.name.endswith('.pdf'):
+        try:
+            pdf_doc = pdfium.PdfDocument(uploaded_source_file.read())
+            extracted_pages = [page.get_textpage().get_text_range() for page in pdf_doc]
+            texte_brut = "\n".join(extracted_pages)
+        except Exception:
+            st.error("Erreur lors de la lecture automatique du PDF source.")
+
+def extraire_sections(texte):
+    titre = "RECETTE GOURMANDE"
+    difficulte = ""
+    budget = ""
+    preparation = ""
+    repos = ""
+    ingredients = ""
+    ustensiles = ""
+    instructions = ""
+    astuces = ""
+    alternative = ""
+
+    lignes = [l.strip() for l in texte.split('\n') if l.strip()]
+    if lignes:
+        titre = lignes[0].upper()
+
+    def trouver_valeur(mot_cle):
+        pattern = rf"{mot_cle}\s*[:\-]\s*([^\n]+)"
+        match = re.search(pattern, texte, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        return ""
+
+    difficulte = trouver_valeur("difficulté")
+    budget = trouver_valeur("budget")
+    preparation = trouver_valeur("préparation")
+    repos = trouver_valeur("repos")
+    if not repos:
+        repos = trouver_valeur("cuisson")
+
+    texte_lower = texte.lower()
+
+    def extraire_bloc(debut_mots, fin_mots):
+        pos_debut = -1
+        for dm in debut_mots:
+            idx = texte_lower.find(dm)
+            if idx != -1:
+                pos_debut = idx + len(dm)
+                break
+        if pos_debut == -1:
+            return ""
         
-        for b in balises:
-            for c in identifier_categories_balise(b):
-                categories_du_fichier.add(c)
+        pos_fin = len(texte)
+        for fm in fin_mots:
+            idx = texte_lower.find(fm, pos_debut)
+            if idx != -1 and idx < pos_fin:
+                pos_fin = idx
                 
-        if not categories_du_fichier:
-            categories_du_fichier.add("Autres")
-                
-        # Filtre sur la catégorie sélectionnée
-        if categorie_filtre != "Toutes" and categorie_filtre not in categories_du_fichier:
-            continue
-            
-        # Nettoyage propre du titre pour l'affichage principal
-        nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
-        nom_affiche = re.sub(r'\[.*?\]', '', nom_affiche).strip()
-        nom_affiche = nom_affiche.replace('_', ' ').strip()
-        
-        # Filtre de recherche tolérante par mot-clé
-        nom_clean = normaliser_mot_cle(nom_affiche)
-        if terme_recherche_clean and (terme_recherche_clean not in nom_clean):
-            continue
-            
-        fichiers_filtrer.append((f, nom_affiche))
+        return texte[pos_debut:pos_fin].strip(" :-\n")
 
-    fichiers_filtrer = sorted(fichiers_filtrer, key=lambda x: x[1].lower())
-    nb_resultats = len(fichiers_filtrer)
+    ingredients = extraire_bloc(["ingrédients", "ingrédient"], ["ustensiles", "instructions", "préparation", "astuces"])
+    ustensiles = extraire_bloc(["ustensiles", "ustensile"], ["instructions", "préparation", "ingrédients", "astuces"])
+    
+    instructions = extraire_bloc(["instructions de préparation", "instructions", "préparation de la recette", "préparation"], ["astuces", "alternative", "dégustation"])
+    if not instructions:
+        instructions = texte
 
-    if categorie_filtre != "Toutes" or terme_recherche_clean:
-        st.subheader(f"📚 Recettes correspondantes ({nb_resultats} / {total_recettes})")
+    instructions = re.sub(r"instructions\s+de\s+préparation", "", instructions, flags=re.IGNORECASE)
+    instructions = re.sub(r"instructions\s+de", "", instructions, flags=re.IGNORECASE)
+    instructions = re.sub(r"préparation\s+de\s+la\s+recette", "", instructions, flags=re.IGNORECASE)
+    instructions = instructions.strip(" :-\n")
+
+    astuces = extraire_bloc(["astuces de l'auteur", "astuces"], ["alternative", "dégustation"])
+    alternative = extraire_bloc(["alternative & dégustation", "alternative", "dégustation"], [])
+
+    return titre, difficulte, budget, preparation, repos, ingredients, ustensiles, instructions, astuces, alternative
+
+if submitted:
+    if not texte_brut.strip():
+        st.warning("Veuillez importer un fichier ou coller du texte pour générer la fiche.")
     else:
-        st.subheader(f"📚 Toutes vos recettes ({total_recettes})")
+        titre, difficulte, budget, preparation, repos, ingredients, ustensiles, instructions, astuces, alternative = extraire_sections(texte_brut)
 
-    for f, nom_affiche in fichiers_filtrer:
-        nom = f['name']
-        file_id = f['id']
+        image_html = ""
+        if uploaded_image is not None:
+            bytes_data = uploaded_image.getvalue()
+            encoded_img = base64.b64encode(bytes_data).decode("utf-8")
+            image_src = f"data:{uploaded_image.type};base64,{encoded_img}"
+            image_html = f'<img src="{image_src}" style="width: 100%; height: 140px; object-fit: cover; border-radius: 6px; display: block;" />'
+        else:
+            image_html = '<div style="width: 100%; height: 140px; display: flex; align-items: center; justify-content: center; background-color: #fbf5ee; border-radius: 6px; border: 1px dashed #d97724; color: #7c321a; font-size: 26px;">🍲</div>'
 
-        with st.expander(f"📖 {nom_affiche}"):
-            download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
-            headers = {"Authorization": f"Bearer {creds.token}"}
+        badge_items = []
+        if difficulte: badge_items.append(f'<td class="badge"><strong>Difficulté</strong>{difficulte}</td>')
+        if budget: badge_items.append(f'<td class="badge"><strong>Budget</strong>{budget}</td>')
+        if preparation: badge_items.append(f'<td class="badge"><strong>Préparation</strong>{preparation}</td>')
+        if repos: badge_items.append(f'<td class="badge"><strong>Temps / Repos</strong>{repos}</td>')
 
-            col_btn1, col_btn2 = st.columns([1, 1])
+        badges_html = ""
+        if badge_items:
+            badges_html = '<table class="badge-grid"><tr>' + ''.join(badge_items) + '</tr></table>'
 
-            with col_btn1:
-                voir_recette = st.button("👁️ Afficher la recette", key=f"view_{file_id}")
+        bottom_boxes_html = ""
+        if astuces or alternative:
+            bottom_boxes_html += '<div class="bottom-grid">'
+            if astuces:
+                bottom_boxes_html += f'''
+                    <div class="bottom-col">
+                        <div class="card" style="margin-bottom:0;">
+                            <div class="section-title">&#9889; Astuces de l'auteur</div>
+                            <div style="white-space: pre-line; font-size: 8.5pt;">{astuces}</div>
+                        </div>
+                    </div>
+                '''
+            if alternative:
+                bottom_boxes_html += f'''
+                    <div class="bottom-col">
+                        <div class="card" style="margin-bottom:0;">
+                            <div class="section-title">&#10024; Alternative & Dégustation</div>
+                            <div style="white-space: pre-line; font-size: 8.5pt;">{alternative}</div>
+                        </div>
+                    </div>
+                '''
+            bottom_boxes_html += '</div>'
 
-            with col_btn2:
-                def telecharger_fichier(url, h):
-                    r = requests.get(url, headers=h)
-                    return r.content if r.status_code == 200 else None
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                @page {{ size: A4; margin: 10mm; }}
+                body {{ font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #fdfbf7; color: #2c2c2c; margin: 0; padding: 0; font-size: 9pt; line-height: 1.3; }}
+                .header {{ background-color: #6b2d18; color: white; text-align: center; padding: 10px 15px; border-radius: 6px; margin-bottom: 8px; }}
+                .header h1 {{ margin: 0; font-size: 15pt; text-transform: uppercase; letter-spacing: 0.5px; }}
+                .header p {{ margin: 2px 0 0 0; font-size: 8.5pt; font-style: italic; color: #fbf5ee; }}
+                
+                .top-section {{ width: 100%; display: table; margin-bottom: 8px; }}
+                .meta-col {{ display: table-cell; width: 55%; vertical-align: top; padding-right: 8px; }}
+                .image-col {{ display: table-cell; width: 45%; vertical-align: top; text-align: right; }}
+                
+                .badge-grid {{ width: 100%; border-collapse: separate; border-spacing: 4px; }}
+                .badge {{ background: white; border: 1px solid #d9c5b2; border-radius: 4px; padding: 5px 6px; font-size: 8pt; text-align: center; color: #4a4a4a; }}
+                .badge strong {{ color: #c86414; display: block; font-size: 7pt; text-transform: uppercase; margin-bottom: 1px; }}
 
-                st.download_button(
-                    label="💾 Télécharger le PDF",
-                    data=telecharger_fichier(download_url, headers),
-                    file_name=nom,
-                    mime="application/pdf",
-                    key=f"dl_{file_id}"
-                )
+                .main-grid {{ width: 100%; display: table; margin-bottom: 6px; }}
+                .left-col {{ display: table-cell; width: 40%; vertical-align: top; padding-right: 6px; }}
+                .right-col {{ display: table-cell; width: 60%; vertical-align: top; }}
 
-            if voir_recette:
-                with st.spinner("Chargement de l'aperçu..."):
-                    res = requests.get(download_url, headers=headers)
-                    if res.status_code == 200:
-                        try:
-                            pdf_file = pdfium.PdfDocument(res.content)
-                            for page_index in range(len(pdf_file)):
-                                image = pdf_file[page_index].render(scale=2).to_pil()
-                                st.image(image, use_container_width=True)
-                        except Exception:
-                            st.error("Impossible d'afficher l'aperçu du PDF.")
-                    else:
-                        st.error("Erreur de récupération.")
+                .card {{ background: white; border: 1px solid #ecdcd0; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }}
+                .section-title {{ color: #6b2d18; font-size: 9pt; font-weight: bold; border-bottom: 2px solid #d97724; padding-bottom: 2px; margin-bottom: 5px; text-transform: uppercase; }}
+                
+                .bottom-grid {{ width: 100%; display: table; margin-bottom: 6px; }}
+                .bottom-col {{ display: table-cell; width: 50%; vertical-align: top; padding-right: 4px; }}
 
-    if nb_resultats == 0:
-        st.warning("Aucune recette ne correspond à votre sélection.")
+                .footer {{ text-align: center; font-size: 8pt; color: #7c321a; font-weight: 500; border-top: 1px dashed #d97724; padding-top: 4px; margin-top: 4px; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>{titre}</h1>
+                <p>Le partage des saveurs du terroir</p>
+            </div>
+            
+            <div class="top-section">
+                <div class="meta-col">
+                    {badges_html}
+                </div>
+                <div class="image-col">
+                    {image_html}
+                </div>
+            </div>
+
+            <div class="main-grid">
+                <div class="left-col">
+                    <div class="card">
+                        <div class="section-title">Ingrédients</div>
+                        <div style="white-space: pre-line; font-size: 8.5pt;">{ingredients if ingredients else "• Non spécifié"}</div>
+                    </div>
+                    {'<div class="card"><div class="section-title">Ustensiles</div><div style="white-space: pre-line; font-size: 8.5pt;">' + ustensiles + '</div></div>' if ustensiles and ustensiles != "• Non spécifié" else ''}
+                </div>
+                <div class="right-col">
+                    <div class="card">
+                        <div class="section-title">Instructions de préparation</div>
+                        <div style="white-space: pre-line; font-size: 8.5pt;">{instructions}</div>
+                    </div>
+                </div>
+            </div>
+
+            {bottom_boxes_html}
+
+            <div class="footer">
+                Fiche recette générée avec Amour pour une utilisation personnelle • Bon appétit !
+            </div>
+        </body>
+        </html>
+        """
+
+        # Nettoyage du titre de la recette pour en faire un nom de fichier propre
+        titre_propre = re.sub(r'[^a-zA-Z0-9àâäéèêëîïôöùûüç\s-]', '', titre).strip().lower().replace(' ', '_')
+        nom_fichier = f"[{categorie_choisie}] {titre_propre}.pdf"
+
+        pdf_bytes = HTML(string=html_content).write_pdf()
+        st.success(f"Fiche générée avec succès ! Nom du fichier : **{nom_fichier}**")
+        st.download_button(
+            label=f"📥 Télécharger {nom_fichier}",
+            data=pdf_bytes,
+            file_name=nom_fichier,
+            mime="application/pdf"
+        )
