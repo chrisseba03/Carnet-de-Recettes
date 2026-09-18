@@ -30,7 +30,8 @@ def normaliser_mot_cle(texte):
 # Dictionnaire de correspondance intelligente (Synonymes, accents, pluriels)
 MAPPING_CATEGORIES = {
     "Entrées": ["entree", "entrees"],
-    "Charcuterie": ["charcuterie", "charcuteries", "salaison", "salaisons"],
+    "Charcuteries": ["charcuterie", "charcuteries", "salaison", "salaisons"],
+    "Sauces": ["sauce", "sauces", "vinaigrette", "vinaigrettes", "marinade", "marinades", "condiment", "condiments"],
     "Plats": ["plat", "plats"],
     "Desserts": ["dessert", "desserts", "douceur", "douceurs"],
     "Pains & Pâtisseries": ["pain", "pains", "patisserie", "patisseries", "boulangerie", "brioche", "brioches"],
@@ -107,7 +108,7 @@ fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
 # Liste officielle affichée dans le menu de sélection
-categories_liste = ["Entrées", "Charcuterie", "Plats", "Desserts", "Pains & Pâtisseries", "Vins & Spiritueux", "Autres"]
+categories_liste = ["Entrées", "Charcuteries", "Sauces", "Plats", "Desserts", "Pains & Pâtisseries", "Vins & Spiritueux", "Autres"]
 
 # --- BARRE LATÉRALE : OPTIONS ---
 st.sidebar.header("⚙️ Options")
@@ -143,7 +144,7 @@ for cat, count in stats_cat.items():
 
 # --- AFFICHAGE PRINCIPAL ---
 st.markdown("---")
-recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: pate, crepe, gateau, vin, merguez...)")
+recherche = st.text_input("🔍 **Rechercher une recette par mot-clé**", placeholder="Tapez ici (ex: pate, crepe, gateau, vin, sauce, merguez...)")
 st.markdown("---")
 
 if not fichiers_pdf:
