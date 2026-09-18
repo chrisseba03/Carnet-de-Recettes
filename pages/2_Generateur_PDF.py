@@ -25,13 +25,13 @@ with st.form("recipe_form"):
     recipe_text = st.text_area(
         "Ou collez votre texte brut ici :",
         height=220,
-        placeholder="Collez votre texte complet avec les sections (Ingrédients, Ustensiles, Instructions...)"
+        placeholder="Collez votre texte complet avec les sections (Ingrédients, Ustensiles, Instructions, Astuces...)"
     )
     
     st.subheader("2. 📸 Photo de la Recette (Optionnel)")
     uploaded_image = st.file_uploader("Choisissez une image (JPG, PNG)", type=["jpg", "jpeg", "png"])
     
-    submitted = st.form_submit_button("Générer la Fiche PDF Propre")
+    submitted = st.form_submit_button("Générer la Fiche PDF Complète")
 
 # Récupération et traitement du texte
 texte_brut = recipe_text
@@ -51,7 +51,6 @@ if uploaded_source_file is not None:
 
 def extraire_sections(texte):
     titre = "RECETTE GOURMANDE"
-    sous_titre = "Le partage des saveurs du terroir bourbonnais"
     difficulte = ""
     budget = ""
     preparation = ""
@@ -103,12 +102,10 @@ def extraire_sections(texte):
     ingredients = extraire_bloc(["ingrédients"], ["ustensiles", "instructions", "préparation", "astuces"])
     ustensiles = extraire_bloc(["ustensiles"], ["instructions", "préparation", "ingrédients", "astuces"])
     
-    # Nettoyage des instructions pour éviter les résidus indésirables
-    instructions = extraire_bloc(["instructions de préparation", "instructions", "préparationnal"], ["astuces", "alternative"])
+    instructions = extraire_bloc(["instructions de préparation", "instructions", "préparation"], ["astuces", "alternative"])
     if not instructions:
         instructions = texte
 
-    # Nettoyage additionnel des titres parasites dans les instructions
     instructions = re.sub(r"instructions\s+de\s+préparation", "", instructions, flags=re.IGNORECASE)
     instructions = re.sub(r"instructions\s+de", "", instructions, flags=re.IGNORECASE)
     instructions = instructions.strip(" :-\n")
@@ -116,13 +113,13 @@ def extraire_sections(texte):
     astuces = extraire_bloc(["astuces de l'auteur", "astuces"], ["alternative", "dégustation"])
     alternative = extraire_bloc(["alternative & dégustation", "alternative", "dégustation"], [])
 
-    return titre, sous_titre, difficulte, budget, preparation, repos, ingredients, ustensiles, instructions, astuces, alternative
+    return titre, difficulte, budget, preparation, repos, ingredients, ustensiles, instructions, astuces, alternative
 
 if submitted:
     if not texte_brut.strip():
         st.warning("Veuillez importer un fichier ou coller du texte pour générer la fiche.")
     else:
-        titre, sous_titre, difficulte, budget, preparation, repos, ingredients, ustensiles, instructions, astuces, alternative = extraire_sections(texte_brut)
+        titre, difficulte, budget, preparation, repos, ingredients, ustensiles, instructions, astuces, alternative = extraire_sections(texte_brut)
 
         image_html = ""
         if uploaded_image is not None:
@@ -133,7 +130,7 @@ if submitted:
         else:
             image_html = '<div style="width: 100%; height: 140px; display: flex; align-items: center; justify-content: center; background-color: #fbf5ee; border-radius: 6px; border: 1px dashed #d97724; color: #7c321a; font-size: 26px;">🍲</div>'
 
-        # Construction dynamique des badges (uniquement si les données existent)
+        # Construction dynamique des badges
         badge_items = []
         if difficulte: badge_items.append(f'<td class="badge"><strong>Difficulté</strong>{difficulte}</td>')
         if budget: badge_items.append(f'<td class="badge"><strong>Budget</strong>{budget}</td>')
@@ -143,6 +140,30 @@ if submitted:
         badges_html = ""
         if badge_items:
             badges_html = '<table class="badge-grid"><tr>' + ''.join(badge_items) + '</tr></table>'
+
+        # Blocs optionnels du bas (Astuces et Alternatives)
+        bottom_boxes_html = ""
+        if astuces or alternative:
+            bottom_boxes_html += '<div class="bottom-grid">'
+            if astuces:
+                bottom_boxes_html += f'''
+                    <div class="bottom-col">
+                        <div class="card" style="margin-bottom:0;">
+                            <div class="section-title">💡 Astuces de l'auteur</div>
+                            <div style="white-space: pre-line; font-size: 8.5pt;">{astuces}</div>
+                        </div>
+                    </div>
+                '''
+            if alternative:
+                bottom_boxes_html += f'''
+                    <div class="bottom-col">
+                        <div class="card" style="margin-bottom:0;">
+                            <div class="section-title">✨ Alternative & Dégustation</div>
+                            <div style="white-space: pre-line; font-size: 8.5pt;">{alternative}</div>
+                        </div>
+                    </div>
+                '''
+            bottom_boxes_html += '</div>'
 
         html_content = f"""
         <!DOCTYPE html>
@@ -171,6 +192,9 @@ if submitted:
                 .card {{ background: white; border: 1px solid #ecdcd0; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }}
                 .section-title {{ color: #6b2d18; font-size: 9pt; font-weight: bold; border-bottom: 2px solid #d97724; padding-bottom: 2px; margin-bottom: 5px; text-transform: uppercase; }}
                 
+                .bottom-grid {{ width: 100%; display: table; margin-bottom: 6px; }}
+                .bottom-col {{ display: table-cell; width: 50%; vertical-align: top; padding-right: 4px; }}
+
                 .footer {{ text-align: center; font-size: 8pt; color: #7c321a; font-weight: 500; border-top: 1px dashed #d97724; padding-top: 4px; margin-top: 4px; }}
             </style>
         </head>
@@ -205,6 +229,8 @@ if submitted:
                 </div>
             </div>
 
+            {bottom_boxes_html}
+
             <div class="footer">
                 Fiche recette générée pour votre groupe "La Place du Village - Allier (03)" • Bon appétit !
             </div>
@@ -213,10 +239,10 @@ if submitted:
         """
 
         pdf_bytes = HTML(string=html_content).write_pdf()
-        st.success("Fiche PDF générée avec succès !")
+        st.success("Fiche PDF complète générée avec succès !")
         st.download_button(
-            label="📥 Télécharger la fiche PDF nettoyée",
+            label="📥 Télécharger la fiche PDF finale",
             data=pdf_bytes,
-            file_name="fiche_recette_propre.pdf",
+            file_name="fiche_recette_complete.pdf",
             mime="application/pdf"
         )
