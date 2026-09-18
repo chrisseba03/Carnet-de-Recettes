@@ -29,10 +29,10 @@ with st.form("recipe_form"):
     )
     
     st.subheader("2. 🏷️ Catégorie pour le nom du fichier")
-    # Liste complète mise à jour avec vos nouvelles catégories intégrées
+    # Liste exacte calquée sur vos filtres de recherche + Autres
     categorie_choisie = st.selectbox(
         "Choisissez la catégorie :",
-        ["Entrée", "Plat", "Dessert", "Sauce", "Apéritif", "Boisson", "Charcuteries", "Pains & Pâtisseries", "Divers"]
+        ["Entrées", "Charcuteries", "Sauces", "Plats", "Desserts", "Pains & Pâtisseries", "Vins & Spiritueux", "Autres"]
     )
     
     st.subheader("3. 📸 Photo de la Recette (Optionnel)")
