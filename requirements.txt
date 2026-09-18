@@ -5,4 +5,4 @@ google-auth-httplib2
 requests
 pypdfium2
 extra-streamlit-components
-weasyprint
+fpdf2
