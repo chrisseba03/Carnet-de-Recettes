@@ -9,7 +9,7 @@ st.set_page_config(page_title="Générateur de Fiches PDF - Pro", page_icon="✨
 st.markdown("""
     <div style="background-color: #6b2d18; padding: 20px; border-radius: 10px; color: white; text-align: center; margin-bottom: 20px;">
         <h1 style="margin: 0; font-size: 24px;">✨ Générateur Intelligent de Fiches Recettes</h1>
-        <p style="margin: 5px 0 0 0; font-size: 14px; font-style: italic;">Pour votre groupe "La Place du Village - ALLIER (03)"</p>
+        <p style="margin: 5px 0 0 0; font-size: 14px; font-style: italic;">Pour une utilisation personnelle et gourmande</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -19,19 +19,19 @@ with st.form("recipe_form"):
     uploaded_source_file = st.file_uploader(
         "Déposez un fichier PDF ou Texte (.txt) source (Optionnel)", 
         type=["pdf", "txt"],
-        help="L'application va analyser et structurer automatiquement votre recette !"
+        help="L'application analyse et structure automatiquement votre recette !"
     )
     
     recipe_text = st.text_area(
         "Ou collez votre texte brut ici :",
         height=220,
-        placeholder="Collez votre texte complet avec les sections (Ingrédients, Ustensiles, Instructions, Astuces...)"
+        placeholder="Ex: TILT\nIngrédients :\n- 150g...\nPréparation :\n..."
     )
     
     st.subheader("2. 📸 Photo de la Recette (Optionnel)")
     uploaded_image = st.file_uploader("Choisissez une image (JPG, PNG)", type=["jpg", "jpeg", "png"])
     
-    submitted = st.form_submit_button("Générer la Fiche PDF Finale")
+    submitted = st.form_submit_button("Générer la Fiche PDF Parfaite")
 
 # Récupération et traitement du texte
 texte_brut = recipe_text
@@ -99,15 +99,19 @@ def extraire_sections(texte):
                 
         return texte[pos_debut:pos_fin].strip(" :-\n")
 
-    ingredients = extraire_bloc(["ingrédients"], ["ustensiles", "instructions", "préparation", "astuces"])
-    ustensiles = extraire_bloc(["ustensiles"], ["instructions", "préparation", "ingrédients", "astuces"])
+    # Extraction sécurisée des ingrédients en cherchant les mots suivants possibles
+    ingredients = extraire_bloc(["ingrédients", "ingrédient"], ["ustensiles", "instructions", "préparation", "astuces"])
     
-    instructions = extraire_bloc(["instructions de préparation", "instructions", "préparation"], ["astuces", "alternative"])
+    ustensiles = extraire_bloc(["ustensiles", "ustensile"], ["instructions", "préparation", "ingrédients", "astuces"])
+    
+    instructions = extraire_bloc(["instructions de préparation", "instructions", "préparation de la recette", "préparation"], ["astuces", "alternative", "dégustation"])
     if not instructions:
         instructions = texte
 
+    # Nettoyage des résidus de titres dans les instructions
     instructions = re.sub(r"instructions\s+de\s+préparation", "", instructions, flags=re.IGNORECASE)
     instructions = re.sub(r"instructions\s+de", "", instructions, flags=re.IGNORECASE)
+    instructions = re.sub(r"préparation\s+de\s+la\s+recette", "", instructions, flags=re.IGNORECASE)
     instructions = instructions.strip(" :-\n")
 
     astuces = extraire_bloc(["astuces de l'auteur", "astuces"], ["alternative", "dégustation"])
@@ -141,7 +145,7 @@ if submitted:
         if badge_items:
             badges_html = '<table class="badge-grid"><tr>' + ''.join(badge_items) + '</tr></table>'
 
-        # Blocs optionnels du bas (Astuces et Alternatives) avec des symboles propres
+        # Blocs optionnels du bas (Astuces et Alternatives)
         bottom_boxes_html = ""
         if astuces or alternative:
             bottom_boxes_html += '<div class="bottom-grid">'
@@ -201,7 +205,7 @@ if submitted:
         <body>
             <div class="header">
                 <h1>{titre}</h1>
-                <p>Le partage des saveurs du terroir bourbonnais</p>
+                <p>Le partage des saveurs du terroir</p>
             </div>
             
             <div class="top-section">
@@ -217,7 +221,7 @@ if submitted:
                 <div class="left-col">
                     <div class="card">
                         <div class="section-title">Ingrédients</div>
-                        <div style="white-space: pre-line; font-size: 8.5pt;">{ingredients}</div>
+                        <div style="white-space: pre-line; font-size: 8.5pt;">{ingredients if ingredients else "• Non spécifié"}</div>
                     </div>
                     {'<div class="card"><div class="section-title">Ustensiles</div><div style="white-space: pre-line; font-size: 8.5pt;">' + ustensiles + '</div></div>' if ustensiles and ustensiles != "• Non spécifié" else ''}
                 </div>
@@ -241,8 +245,8 @@ if submitted:
         pdf_bytes = HTML(string=html_content).write_pdf()
         st.success("Fiche PDF générée avec succès !")
         st.download_button(
-            label="📥 Télécharger la fiche PDF finale",
+            label="📥 Télécharger la fiche PDF corrigée",
             data=pdf_bytes,
-            file_name="fiche_recette_personnelle.pdf",
+            file_name="fiche_recette_corrigee.pdf",
             mime="application/pdf"
         )
