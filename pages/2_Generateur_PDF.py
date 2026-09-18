@@ -29,9 +29,10 @@ with st.form("recipe_form"):
     )
     
     st.subheader("2. 🏷️ Catégorie pour le nom du fichier")
+    # Liste complète mise à jour avec vos nouvelles catégories intégrées
     categorie_choisie = st.selectbox(
         "Choisissez la catégorie :",
-        ["Entrée", "Plat", "Dessert", "Sauce", "Apéritif", "Boisson", "Divers"]
+        ["Entrée", "Plat", "Dessert", "Sauce", "Apéritif", "Boisson", "Charcuteries", "Pains & Pâtisseries", "Divers"]
     )
     
     st.subheader("3. 📸 Photo de la Recette (Optionnel)")
@@ -243,7 +244,6 @@ if submitted:
         </html>
         """
 
-        # Nettoyage du titre de la recette pour en faire un nom de fichier propre (sans caractères spéciaux)
         titre_propre = re.sub(r'[^a-zA-Z0-9àâäéèêëîïôöùûüç\s-]', '', titre).strip().lower().replace(' ', '_')
         nom_fichier = f"[{categorie_choisie}] {titre_propre}.pdf"
 
