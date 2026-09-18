@@ -1,9 +1,10 @@
 import streamlit as st
 import base64
+import re
 from weasyprint import HTML
 import pypdfium2 as pdfium
 
-st.set_page_config(page_title="Générateur de Fiches PDF - Auto", page_icon="✨", layout="wide")
+st.set_page_config(page_title="Générateur de Fiches PDF - Pro", page_icon="✨", layout="wide")
 
 st.markdown("""
     <div style="background-color: #6b2d18; padding: 20px; border-radius: 10px; color: white; text-align: center; margin-bottom: 20px;">
@@ -18,21 +19,21 @@ with st.form("recipe_form"):
     uploaded_source_file = st.file_uploader(
         "Déposez un fichier PDF ou Texte (.txt) source (Optionnel)", 
         type=["pdf", "txt"],
-        help="L'application va chercher à séparer les ingrédients et les étapes toute seule !"
+        help="L'application va analyser et structurer automatiquement votre recette !"
     )
     
     recipe_text = st.text_area(
         "Ou collez votre texte brut ici :",
-        height=200,
-        placeholder="Collez votre recette. Astuce : vous pouvez inclure des mots comme 'INGRÉDIENTS :' et 'PRÉPARATION :' pour aider le tri automatique."
+        height=220,
+        placeholder="Collez votre texte complet avec les sections (Ingrédients, Ustensiles, Instructions...)"
     )
     
     st.subheader("2. 📸 Photo de la Recette (Optionnel)")
     uploaded_image = st.file_uploader("Choisissez une image (JPG, PNG)", type=["jpg", "jpeg", "png"])
     
-    submitted = st.form_submit_button("Générer la Fiche PDF Structurée")
+    submitted = st.form_submit_button("Générer la Fiche PDF Propre")
 
-# Récupération et traitement automatique du texte
+# Récupération et traitement du texte
 texte_brut = recipe_text
 if uploaded_source_file is not None:
     if uploaded_source_file.name.endswith('.txt'):
@@ -48,55 +49,100 @@ if uploaded_source_file is not None:
         except Exception:
             st.error("Erreur lors de la lecture automatique du PDF source.")
 
-# Fonction d'extraction automatique des blocs
 def extraire_sections(texte):
-    # Valeurs par défaut
-    titre = "RECETTE GOURMANDE DU TERROIR"
-    ingredients = "• Non spécifié"
-    ustensiles = "• Non spécifié"
-    instructions = texte
+    titre = "RECETTE GOURMANDE"
+    sous_titre = "Le partage des saveurs du terroir bourbonnais"
+    difficulte = ""
+    budget = ""
+    preparation = ""
+    repos = ""
+    ingredients = ""
+    ustensiles = ""
+    instructions = ""
+    astuces = ""
+    alternative = ""
 
-    lignes = texte.split('\n')
-    if lignes and len(lignes[0].strip()) > 3:
-        titre = lignes[0].strip().upper()
+    lignes = [l.strip() for l in texte.split('\n') if l.strip()]
+    if lignes:
+        titre = lignes[0].upper()
 
-    # Découpage basique par mots-clés si présents dans le texte
+    def trouver_valeur(mot_cle):
+        pattern = rf"{mot_cle}\s*[:\-]\s*([^\n]+)"
+        match = re.search(pattern, texte, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        return ""
+
+    difficulte = trouver_valeur("difficulté")
+    budget = trouver_valeur("budget")
+    preparation = trouver_valeur("préparation")
+    repos = trouver_valeur("repos")
+    if not repos:
+        repos = trouver_valeur("cuisson")
+
     texte_lower = texte.lower()
+
+    def extraire_bloc(debut_mots, fin_mots):
+        pos_debut = -1
+        for dm in debut_mots:
+            idx = texte_lower.find(dm)
+            if idx != -1:
+                pos_debut = idx + len(dm)
+                break
+        if pos_debut == -1:
+            return ""
+        
+        pos_fin = len(texte)
+        for fm in fin_mots:
+            idx = texte_lower.find(fm, pos_debut)
+            if idx != -1 and idx < pos_fin:
+                pos_fin = idx
+                
+        return texte[pos_debut:pos_fin].strip(" :-\n")
+
+    ingredients = extraire_bloc(["ingrédients"], ["ustensiles", "instructions", "préparation", "astuces"])
+    ustensiles = extraire_bloc(["ustensiles"], ["instructions", "préparation", "ingrédients", "astuces"])
     
-    # Extraction simplifiée des ingrédients si le mot-clé existe
-    if "ingrédients" in texte_lower:
-        try:
-            partie_ing = texte[texte_lower.index("ingrédients"):]
-            if "préparation" in partie_ing.lower():
-                partie_ing = partie_ing[:partie_ing.lower().index("préparation")]
-            ingredients = partie_ing.replace("INGRÉDIENTS", "").replace("Ingrédients", "").strip()
-        except:
-            pass
+    # Nettoyage des instructions pour éviter les résidus indésirables
+    instructions = extraire_bloc(["instructions de préparation", "instructions", "préparationnal"], ["astuces", "alternative"])
+    if not instructions:
+        instructions = texte
 
-    if "instructions" in texte_lower or "préparation" in texte_lower:
-        try:
-            mot_cle = "instructions" if "instructions" in texte_lower else "préparation"
-            partie_inst = texte[texte_lower.index(mot_cle):]
-            instructions = partie_inst.replace("INSTRUCTIONS DE PRÉPARATION", "").replace("Instructions de préparation", "").replace("PRÉPARATION", "").strip()
-        except:
-            pass
+    # Nettoyage additionnel des titres parasites dans les instructions
+    instructions = re.sub(r"instructions\s+de\s+préparation", "", instructions, flags=re.IGNORECASE)
+    instructions = re.sub(r"instructions\s+de", "", instructions, flags=re.IGNORECASE)
+    instructions = instructions.strip(" :-\n")
 
-    return titre, ingredients, ustensiles, instructions
+    astuces = extraire_bloc(["astuces de l'auteur", "astuces"], ["alternative", "dégustation"])
+    alternative = extraire_bloc(["alternative & dégustation", "alternative", "dégustation"], [])
+
+    return titre, sous_titre, difficulte, budget, preparation, repos, ingredients, ustensiles, instructions, astuces, alternative
 
 if submitted:
     if not texte_brut.strip():
         st.warning("Veuillez importer un fichier ou coller du texte pour générer la fiche.")
     else:
-        titre_recette, ingredients_recette, ustensiles_recette, instructions_recette = extraire_sections(texte_brut)
+        titre, sous_titre, difficulte, budget, preparation, repos, ingredients, ustensiles, instructions, astuces, alternative = extraire_sections(texte_brut)
 
         image_html = ""
         if uploaded_image is not None:
             bytes_data = uploaded_image.getvalue()
             encoded_img = base64.b64encode(bytes_data).decode("utf-8")
             image_src = f"data:{uploaded_image.type};base64,{encoded_img}"
-            image_html = f'<img src="{image_src}" style="width: 100%; height: 150px; object-fit: cover; border-radius: 6px; display: block;" />'
+            image_html = f'<img src="{image_src}" style="width: 100%; height: 140px; object-fit: cover; border-radius: 6px; display: block;" />'
         else:
-            image_html = '<div style="width: 100%; height: 150px; display: flex; align-items: center; justify-content: center; background-color: #fbf5ee; border-radius: 6px; border: 1px dashed #d97724; color: #7c321a; font-size: 28px;">🍲</div>'
+            image_html = '<div style="width: 100%; height: 140px; display: flex; align-items: center; justify-content: center; background-color: #fbf5ee; border-radius: 6px; border: 1px dashed #d97724; color: #7c321a; font-size: 26px;">🍲</div>'
+
+        # Construction dynamique des badges (uniquement si les données existent)
+        badge_items = []
+        if difficulte: badge_items.append(f'<td class="badge"><strong>Difficulté</strong>{difficulte}</td>')
+        if budget: badge_items.append(f'<td class="badge"><strong>Budget</strong>{budget}</td>')
+        if preparation: badge_items.append(f'<td class="badge"><strong>Préparation</strong>{preparation}</td>')
+        if repos: badge_items.append(f'<td class="badge"><strong>Temps / Repos</strong>{repos}</td>')
+
+        badges_html = ""
+        if badge_items:
+            badges_html = '<table class="badge-grid"><tr>' + ''.join(badge_items) + '</tr></table>'
 
         html_content = f"""
         <!DOCTYPE html>
@@ -118,7 +164,7 @@ if submitted:
                 .badge {{ background: white; border: 1px solid #d9c5b2; border-radius: 4px; padding: 5px 6px; font-size: 8pt; text-align: center; color: #4a4a4a; }}
                 .badge strong {{ color: #c86414; display: block; font-size: 7pt; text-transform: uppercase; margin-bottom: 1px; }}
 
-                .main-grid {{ width: 100%; display: table; margin-bottom: 8px; }}
+                .main-grid {{ width: 100%; display: table; margin-bottom: 6px; }}
                 .left-col {{ display: table-cell; width: 40%; vertical-align: top; padding-right: 6px; }}
                 .right-col {{ display: table-cell; width: 60%; vertical-align: top; }}
 
@@ -130,21 +176,13 @@ if submitted:
         </head>
         <body>
             <div class="header">
-                <h1>{titre_recette}</h1>
+                <h1>{titre}</h1>
                 <p>Le partage des saveurs du terroir bourbonnais</p>
             </div>
             
             <div class="top-section">
                 <div class="meta-col">
-                    <table class="badge-grid">
-                        <tr>
-                            <td class="badge"><strong>Style</strong>Traditionnel</td>
-                            <td class="badge"><strong>Qualité</strong>Fait Maison</td>
-                        </tr>
-                        <tr>
-                            <td class="badge" colspan="2"><strong>Communauté</strong>La Place du Village - Allier (03)</td>
-                        </tr>
-                    </table>
+                    {badges_html}
                 </div>
                 <div class="image-col">
                     {image_html}
@@ -155,29 +193,30 @@ if submitted:
                 <div class="left-col">
                     <div class="card">
                         <div class="section-title">Ingrédients</div>
-                        <div style="white-space: pre-line; font-size: 8.5pt;">{ingredients_recette}</div>
+                        <div style="white-space: pre-line; font-size: 8.5pt;">{ingredients}</div>
                     </div>
+                    {'<div class="card"><div class="section-title">Ustensiles</div><div style="white-space: pre-line; font-size: 8.5pt;">' + ustensiles + '</div></div>' if ustensiles and ustensiles != "• Non spécifié" else ''}
                 </div>
                 <div class="right-col">
                     <div class="card">
                         <div class="section-title">Instructions de préparation</div>
-                        <div style="white-space: pre-line; font-size: 8.5pt;">{instructions_recette}</div>
+                        <div style="white-space: pre-line; font-size: 8.5pt;">{instructions}</div>
                     </div>
                 </div>
             </div>
 
             <div class="footer">
-                Fiche recette générée pour votre groupe "La Place du Village - ALLIER (03)" • Bon appétit !
+                Fiche recette générée pour votre groupe "La Place du Village - Allier (03)" • Bon appétit !
             </div>
         </body>
         </html>
         """
 
         pdf_bytes = HTML(string=html_content).write_pdf()
-        st.success("Fiche structurée automatiquement avec succès !")
+        st.success("Fiche PDF générée avec succès !")
         st.download_button(
-            label="📥 Télécharger la fiche PDF triée",
+            label="📥 Télécharger la fiche PDF nettoyée",
             data=pdf_bytes,
-            file_name="fiche_recette_triee.pdf",
+            file_name="fiche_recette_propre.pdf",
             mime="application/pdf"
         )
