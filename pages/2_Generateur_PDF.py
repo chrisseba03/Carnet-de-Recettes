@@ -24,14 +24,20 @@ with st.form("recipe_form"):
     
     recipe_text = st.text_area(
         "Ou collez votre texte brut ici :",
-        height=220,
-        placeholder="Ex: TILT\nIngrédients :\n- 150g...\nPréparation :\n..."
+        height=200,
+        placeholder="Ex: SAUCE POUR NEMS\nIngrédients :\n- ...\nPréparation :\n..."
     )
     
-    st.subheader("2. 📸 Photo de la Recette (Optionnel)")
+    st.subheader("2. 🏷️ Catégorie pour le nom du fichier")
+    categorie_choisie = st.selectbox(
+        "Choisissez la catégorie :",
+        ["Entrée", "Plat", "Dessert", "Sauce", "Apéritif", "Boisson", "Divers"]
+    )
+    
+    st.subheader("3. 📸 Photo de la Recette (Optionnel)")
     uploaded_image = st.file_uploader("Choisissez une image (JPG, PNG)", type=["jpg", "jpeg", "png"])
     
-    submitted = st.form_submit_button("Générer la Fiche PDF Parfaite")
+    submitted = st.form_submit_button("Générer la Fiche PDF")
 
 # Récupération et traitement du texte
 texte_brut = recipe_text
@@ -99,16 +105,13 @@ def extraire_sections(texte):
                 
         return texte[pos_debut:pos_fin].strip(" :-\n")
 
-    # Extraction sécurisée des ingrédients en cherchant les mots suivants possibles
     ingredients = extraire_bloc(["ingrédients", "ingrédient"], ["ustensiles", "instructions", "préparation", "astuces"])
-    
     ustensiles = extraire_bloc(["ustensiles", "ustensile"], ["instructions", "préparation", "ingrédients", "astuces"])
     
     instructions = extraire_bloc(["instructions de préparation", "instructions", "préparation de la recette", "préparation"], ["astuces", "alternative", "dégustation"])
     if not instructions:
         instructions = texte
 
-    # Nettoyage des résidus de titres dans les instructions
     instructions = re.sub(r"instructions\s+de\s+préparation", "", instructions, flags=re.IGNORECASE)
     instructions = re.sub(r"instructions\s+de", "", instructions, flags=re.IGNORECASE)
     instructions = re.sub(r"préparation\s+de\s+la\s+recette", "", instructions, flags=re.IGNORECASE)
@@ -134,7 +137,6 @@ if submitted:
         else:
             image_html = '<div style="width: 100%; height: 140px; display: flex; align-items: center; justify-content: center; background-color: #fbf5ee; border-radius: 6px; border: 1px dashed #d97724; color: #7c321a; font-size: 26px;">🍲</div>'
 
-        # Construction dynamique des badges
         badge_items = []
         if difficulte: badge_items.append(f'<td class="badge"><strong>Difficulté</strong>{difficulte}</td>')
         if budget: badge_items.append(f'<td class="badge"><strong>Budget</strong>{budget}</td>')
@@ -145,7 +147,6 @@ if submitted:
         if badge_items:
             badges_html = '<table class="badge-grid"><tr>' + ''.join(badge_items) + '</tr></table>'
 
-        # Blocs optionnels du bas (Astuces et Alternatives)
         bottom_boxes_html = ""
         if astuces or alternative:
             bottom_boxes_html += '<div class="bottom-grid">'
@@ -242,11 +243,15 @@ if submitted:
         </html>
         """
 
+        # Nettoyage du titre de la recette pour en faire un nom de fichier propre (sans caractères spéciaux)
+        titre_propre = re.sub(r'[^a-zA-Z0-9àâäéèêëîïôöùûüç\s-]', '', titre).strip().lower().replace(' ', '_')
+        nom_fichier = f"[{categorie_choisie}] {titre_propre}.pdf"
+
         pdf_bytes = HTML(string=html_content).write_pdf()
-        st.success("Fiche PDF générée avec succès !")
+        st.success(f"Fiche générée avec succès ! Nom du fichier : **{nom_fichier}**")
         st.download_button(
-            label="📥 Télécharger la fiche PDF corrigée",
+            label=f"📥 Télécharger {nom_fichier}",
             data=pdf_bytes,
-            file_name="fiche_recette_corrigee.pdf",
+            file_name=nom_fichier,
             mime="application/pdf"
         )
