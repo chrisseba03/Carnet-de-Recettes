@@ -27,7 +27,7 @@ def normaliser_mot_cle(texte):
     texte = normaliser_texte(texte)
     return re.sub(r'[^a-z0-9]', '', texte)
 
-# Dictionnaire de correspondance intelligente (Synonymes, accents, pluriels)
+# Dictionnaire de correspondance intelligente (Synonymes, accents, pluriels harmonisés)
 MAPPING_CATEGORIES = {
     "Entrées": ["entree", "entrees"],
     "Charcuteries": ["charcuterie", "charcuteries", "salaison", "salaisons"],
@@ -107,7 +107,7 @@ except Exception:
 fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
-# Liste officielle affichée dans le menu de sélection
+# Liste officielle affichée dans le menu de sélection (parfaitement alignée avec le mapping)
 categories_liste = ["Entrées", "Charcuteries", "Sauces", "Plats", "Desserts", "Pains & Pâtisseries", "Vins & Spiritueux", "Autres"]
 
 # --- BARRE LATÉRALE : OPTIONS ---
