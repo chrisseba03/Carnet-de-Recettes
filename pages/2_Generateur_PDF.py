@@ -31,7 +31,7 @@ with st.form("recipe_form"):
     st.subheader("2. 📸 Photo de la Recette (Optionnel)")
     uploaded_image = st.file_uploader("Choisissez une image (JPG, PNG)", type=["jpg", "jpeg", "png"])
     
-    submitted = st.form_submit_button("Générer la Fiche PDF Complète")
+    submitted = st.form_submit_button("Générer la Fiche PDF Finale")
 
 # Récupération et traitement du texte
 texte_brut = recipe_text
@@ -141,7 +141,7 @@ if submitted:
         if badge_items:
             badges_html = '<table class="badge-grid"><tr>' + ''.join(badge_items) + '</tr></table>'
 
-        # Blocs optionnels du bas (Astuces et Alternatives)
+        # Blocs optionnels du bas (Astuces et Alternatives) avec des symboles propres
         bottom_boxes_html = ""
         if astuces or alternative:
             bottom_boxes_html += '<div class="bottom-grid">'
@@ -149,7 +149,7 @@ if submitted:
                 bottom_boxes_html += f'''
                     <div class="bottom-col">
                         <div class="card" style="margin-bottom:0;">
-                            <div class="section-title">💡 Astuces de l'auteur</div>
+                            <div class="section-title">&#9889; Astuces de l'auteur</div>
                             <div style="white-space: pre-line; font-size: 8.5pt;">{astuces}</div>
                         </div>
                     </div>
@@ -158,7 +158,7 @@ if submitted:
                 bottom_boxes_html += f'''
                     <div class="bottom-col">
                         <div class="card" style="margin-bottom:0;">
-                            <div class="section-title">✨ Alternative & Dégustation</div>
+                            <div class="section-title">&#10024; Alternative & Dégustation</div>
                             <div style="white-space: pre-line; font-size: 8.5pt;">{alternative}</div>
                         </div>
                     </div>
@@ -232,17 +232,17 @@ if submitted:
             {bottom_boxes_html}
 
             <div class="footer">
-                Fiche recette générée pour votre groupe "La Place du Village - Allier (03)" • Bon appétit !
+                Fiche recette générée avec Amour pour une utilisation personnelle • Bon appétit !
             </div>
         </body>
         </html>
         """
 
         pdf_bytes = HTML(string=html_content).write_pdf()
-        st.success("Fiche PDF complète générée avec succès !")
+        st.success("Fiche PDF générée avec succès !")
         st.download_button(
             label="📥 Télécharger la fiche PDF finale",
             data=pdf_bytes,
-            file_name="fiche_recette_complete.pdf",
+            file_name="fiche_recette_personnelle.pdf",
             mime="application/pdf"
         )
