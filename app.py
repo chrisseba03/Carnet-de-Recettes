@@ -331,4 +331,12 @@ def generer_pdf_recette(
   body_table.setStyle(
       TableStyle([
           ("VALIGN", (0, 0), (-1, -1), "TOP"),
-          ("
+          ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fbf5ee")),
+          ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#e5dccb")),
+          ("TOPPADDING", (0, 0), (-1, -1), 8),
+          ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+          ("LEFTPADDING", (0, 0), (-1, -1), 8),
+          ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+      ])
+  )
+  elements.append(body_table)
