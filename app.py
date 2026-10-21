@@ -248,8 +248,21 @@ else:
                         try:
                             pdf_file = pdfium.PdfDocument(res.content)
                             for page_index in range(len(pdf_file)):
-                                image = pdf_file[page_index].render(scale=1.3).to_pil()
-                                st.image(image, use_container_width=True)
+                                image = pdf_file[page_index].render(scale=1.5).to_pil()
+                                
+                                # Conversion de l'image en buffer pour l'affichage HTML zoomable
+                                buffered = io.BytesIO()
+                                image.save(buffered, format="JPEG", quality=95)
+                                img_str = base64.b64encode(buffered.getvalue()).decode()
+                                
+                                # Conteneur HTML avec défilement et zoom tactile optimisé pour tablette
+                                html_img = f"""
+                                <div style="width: 100%; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; margin-bottom: 10px; background: #fff; padding: 5px;">
+                                    <img src="data:image/jpeg;base64,{img_str}" style="width: 100%; height: auto; display: block; max-width: none;" />
+                                </div>
+                                """
+                                st.markdown(html_img, unsafe_allow_html=True)
+                                
                         except Exception:
                             st.error("Impossible d'afficher l'aperçu du PDF.")
                     else:
