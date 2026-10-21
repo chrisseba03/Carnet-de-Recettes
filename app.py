@@ -226,7 +226,7 @@ else:
             col_btn1, col_btn2 = st.columns([1, 1])
 
             with col_btn1:
-                voir_recette = st.button("👁️ Afficher la recette", key=f"view_{file_id}")
+                voir_recette = st.button("👁️ Afficher l'aperçu image", key=f"view_{file_id}")
 
             with col_btn2:
                 def telecharger_fichier(url, h):
@@ -240,6 +240,9 @@ else:
                     mime="application/pdf",
                     key=f"dl_{file_id}"
                 )
+
+            # Petit conseil pratique ajouté ici
+            st.info("💡 **Astuce** : Pour zoomer sur les ingrédients ou les instructions, cliquez sur **Télécharger le PDF** afin de l'ouvrir avec le lecteur de votre appareil.", icon="🔍")
 
             if voir_recette:
                 with st.spinner("Chargement de l'aperçu..."):
