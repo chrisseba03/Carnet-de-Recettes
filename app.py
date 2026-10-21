@@ -248,10 +248,10 @@ else:
                         try:
                             pdf_file = pdfium.PdfDocument(res.content)
                             for page_index in range(len(pdf_file)):
-                                image = pdf_file[page_index].render(scale=1.3).to_pil()
+                                image = pdf_file[page_index].render(scale=1.5).to_pil()
                                 st.image(image, use_container_width=True)
-                        except Exception:
-                            st.error("Impossible d'afficher l'aperçu du PDF.")
+                        except Exception as e:
+                            st.error(f"Impossible d'afficher l'aperçu. Erreur : {e}")
                     else:
                         st.error("Erreur de récupération.")
 
