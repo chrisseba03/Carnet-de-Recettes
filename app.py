@@ -27,7 +27,7 @@ def normaliser_mot_cle(texte):
     texte = normaliser_texte(texte)
     return re.sub(r'[^a-z0-9]', '', texte)
 
-# Dictionnaire de correspondance intelligente mis à jour avec vos nouvelles catégories
+# Dictionnaire de correspondance intelligente mis à jour
 MAPPING_CATEGORIES = {
     "Entrées": ["entree", "entrees"],
     "Charcuteries": ["charcuterie", "charcuteries", "salaison", "salaisons"],
@@ -113,32 +113,12 @@ total_recettes = len(fichiers_pdf)
 categories_liste = ["Entrées", "Charcuteries", "Sauces", "Plat unique", "Viande", "Poisson", "Desserts", "Pâtes et pains", "Vins & Spiritueux", "Autres"]
 options_categories = ["Toutes"] + categories_liste
 
-# Gestion de l'état pour rendre la répartition cliquable
+# --- GESTION DE L'ÉTAT DU FILTRE ---
 if "categorie_filtre" not in st.session_state:
     st.session_state.categorie_filtre = "Toutes"
 
-index_actuel = options_categories.index(st.session_state.categorie_filtre) if st.session_state.categorie_filtre in options_categories else 0
-
-# --- BARRE LATÉRALE : OPTIONS ---
-st.sidebar.header("⚙️ Options")
-
-categorie_filtre = st.sidebar.selectbox(
-    "Filtrer par catégorie", 
-    options_categories, 
-    index=index_actuel,
-    key="select_box_filtre"
-)
-
-if st.session_state.select_box_filtre != st.session_state.categorie_filtre:
-    st.session_state.categorie_filtre = st.session_state.select_box_filtre
-
-if st.sidebar.button("🔄 Rafraîchir la liste"):
-    st.cache_data.clear()
-    st.rerun()
-
-# --- BARRE LATÉRALE : RÉPARTITION CLIQUABLE ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("📊 Répartition (Cliquez pour filtrer)")
+# --- BARRE LATÉRALE : RÉPARTITION CLIQUABLE (Placée AVANT le selectbox pour forcer l'état) ---
+st.sidebar.header("📊 Répartition (Cliquez pour filtrer)")
 stats_cat = {cat: 0 for cat in categories_liste}
 
 for f in fichiers_pdf:
@@ -161,10 +141,33 @@ if st.sidebar.button(f"📚 Toutes ({total_recettes})", key="btn_toutes"):
     st.rerun()
 
 for cat, count in stats_cat.items():
-    if count > 0:
-        if st.sidebar.button(f"• {cat} : {count}", key=f"btn_cat_{cat}"):
-            st.session_state.categorie_filtre = cat
-            st.rerun()
+    if st.sidebar.button(f"• {cat} : {count}", key=f"btn_cat_{cat}"):
+        st.session_state.categorie_filtre = cat
+        st.rerun()
+
+st.sidebar.markdown("---")
+
+# --- BARRE LATÉRALE : OPTIONS ---
+st.sidebar.header("⚙️ Options")
+
+# Le selectbox se cale directement sur st.session_state.categorie_filtre
+index_actuel = options_categories.index(st.session_state.categorie_filtre) if st.session_state.categorie_filtre in options_categories else 0
+
+categorie_filtre = st.sidebar.selectbox(
+    "Filtrer par catégorie", 
+    options_categories, 
+    index=index_actuel,
+    key="select_box_filtre"
+)
+
+# Si l'utilisateur change le selectbox manuellement, on met à jour la session
+if categorie_filtre != st.session_state.categorie_filtre:
+    st.session_state.categorie_filtre = categorie_filtre
+    st.rerun()
+
+if st.sidebar.button("🔄 Rafraîchir la liste"):
+    st.cache_data.clear()
+    st.rerun()
 
 filtre_actif = st.session_state.categorie_filtre
 
