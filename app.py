@@ -27,14 +27,16 @@ def normaliser_mot_cle(texte):
     texte = normaliser_texte(texte)
     return re.sub(r'[^a-z0-9]', '', texte)
 
-# Dictionnaire de correspondance intelligente (Synonymes, accents, pluriels harmonisés)
+# Dictionnaire de correspondance intelligente mis à jour avec vos nouvelles catégories
 MAPPING_CATEGORIES = {
     "Entrées": ["entree", "entrees"],
     "Charcuteries": ["charcuterie", "charcuteries", "salaison", "salaisons"],
     "Sauces": ["sauce", "sauces", "vinaigrette", "vinaigrettes", "marinade", "marinades", "condiment", "condiments"],
-    "Plats": ["plat", "plats"],
-    "Desserts": ["dessert", "desserts", "douceur", "douceurs"],
-    "Pains & Pâtisseries": ["pain", "pains", "patisserie", "patisseries", "boulangerie", "brioche", "brioches"],
+    "Plat unique": ["plat unique", "plat", "plats", "platunique"],
+    "Viande": ["viande", "viandes", "boeuf", "veau", "porc", "volaille", "poulet", "agneau", "canard", "steak", "roti", "saucisse"],
+    "Poisson": ["poisson", "poissons", "crustace", "crustaces", "fruit de mer", "fruits de mer", "saumon", "cabillaud", "truite", "thon", "crevette"],
+    "Desserts": ["dessert", "desserts", "douceur", "douceurs", "gateau", "tarte"],
+    "Pâtes et pains": ["pate", "pates", "pain", "pains", "patisserie", "patisseries", "boulangerie", "brioche", "brioches", "pizza", "brisee", "feuilletee"],
     "Vins & Spiritueux": ["vin", "vins", "spiritueux", "boisson", "boissons", "apero", "aperitif", "aperitifs", "cave", "cocktail", "cocktails"]
 }
 
@@ -107,20 +109,35 @@ except Exception:
 fichiers_pdf = [f for f in fichiers_bruts if f['name'].lower().endswith('.pdf')]
 total_recettes = len(fichiers_pdf)
 
-# Liste officielle affichée dans le menu de sélection (parfaitement alignée avec le mapping)
-categories_liste = ["Entrées", "Charcuteries", "Sauces", "Plats", "Desserts", "Pains & Pâtisseries", "Vins & Spiritueux", "Autres"]
+# Liste officielle des catégories (incluant vos ajouts et "Autres")
+categories_liste = ["Entrées", "Charcuteries", "Sauces", "Plat unique", "Viande", "Poisson", "Desserts", "Pâtes et pains", "Vins & Spiritueux", "Autres"]
+
+# Gestion de l'état pour rendre la répartition cliquable
+if "categorie_filtre" not in st.session_state:
+    st.session_state.categorie_filtre = "Toutes"
 
 # --- BARRE LATÉRALE : OPTIONS ---
 st.sidebar.header("⚙️ Options")
-categorie_filtre = st.sidebar.selectbox("Filtrer par catégorie", ["Toutes"] + categories_liste)
+
+# Le selectbox se synchronise avec la session state
+categorie_filtre = st.sidebar.selectbox(
+    "Filtrer par catégorie", 
+    ["Toutes"] + categories_liste, 
+    index=["Toutes" + categories_liste].index if st.session_state.categorie_filtre in ["Toutes"] + categories_liste else 0,
+    key="select_box_filtre"
+)
+
+# Synchronisation manuelle du selectbox si modifié via les boutons de répartition
+if st.session_state.select_box_filtre != st.session_state.categorie_filtre:
+    st.session_state.categorie_filtre = st.session_state.select_box_filtre
 
 if st.sidebar.button("🔄 Rafraîchir la liste"):
     st.cache_data.clear()
     st.rerun()
 
-# --- BARRE LATÉRALE : RÉPARTITION ---
+# --- BARRE LATÉRALE : RÉPARTITION CLIQUABLE ---
 st.sidebar.markdown("---")
-st.sidebar.subheader("📊 Répartition")
+st.sidebar.subheader("📊 Répartition (Cliquez pour filtrer)")
 stats_cat = {cat: 0 for cat in categories_liste}
 
 for f in fichiers_pdf:
@@ -138,9 +155,19 @@ for f in fichiers_pdf:
         for c in cats_du_fichier:
             stats_cat[c] += 1
 
+# Bouton spécial pour réinitialiser
+if st.sidebar.button(f"📚 Toutes ({total_recettes})", key="btn_toutes"):
+    st.session_state.categorie_filtre = "Toutes"
+    st.rerun()
+
 for cat, count in stats_cat.items():
     if count > 0:
-        st.sidebar.text(f"• {cat} : {count}")
+        if st.sidebar.button(f"• {cat} : {count}", key=f"btn_cat_{cat}"):
+            st.session_state.categorie_filtre = cat
+            st.rerun()
+
+# Utiliser la valeur de la session state pour le filtre actif
+filtre_actif = st.session_state.categorie_filtre
 
 # --- AFFICHAGE PRINCIPAL ---
 st.markdown("---")
@@ -157,7 +184,6 @@ else:
         nom = f['name']
         file_id = f['id']
 
-        # Identification de toutes les catégories associées au fichier
         balises = re.findall(r'\[(.*?)\]', nom)
         categories_du_fichier = set()
         
@@ -168,16 +194,14 @@ else:
         if not categories_du_fichier:
             categories_du_fichier.add("Autres")
                 
-        # Filtre sur la catégorie sélectionnée
-        if categorie_filtre != "Toutes" and categorie_filtre not in categories_du_fichier:
+        # Filtre sur la catégorie sélectionnée (via le menu ou les clics de la sidebar)
+        if filtre_actif != "Toutes" and filtre_actif not in categories_du_fichier:
             continue
             
-        # Nettoyage propre du titre pour l'affichage principal
         nom_affiche = nom.replace('.pdf', '').replace('.PDF', '')
         nom_affiche = re.sub(r'\[.*?\]', '', nom_affiche).strip()
         nom_affiche = nom_affiche.replace('_', ' ').strip()
         
-        # Filtre de recherche tolérante par mot-clé
         nom_clean = normaliser_mot_cle(nom_affiche)
         if terme_recherche_clean and (terme_recherche_clean not in nom_clean):
             continue
@@ -187,8 +211,8 @@ else:
     fichiers_filtrer = sorted(fichiers_filtrer, key=lambda x: x[1].lower())
     nb_resultats = len(fichiers_filtrer)
 
-    if categorie_filtre != "Toutes" or terme_recherche_clean:
-        st.subheader(f"📚 Recettes correspondantes ({nb_resultats} / {total_recettes})")
+    if filtre_actif != "Toutes" or terme_recherche_clean:
+        st.subheader(f"📚 Recettes correspondantes ({nb_resultats} / {total_recettes}) - Filtre : [{filtre_actif}]")
     else:
         st.subheader(f"📚 Toutes vos recettes ({total_recettes})")
 
@@ -225,7 +249,8 @@ else:
                         try:
                             pdf_file = pdfium.PdfDocument(res.content)
                             for page_index in range(len(pdf_file)):
-                                image = pdf_file[page_index].render(scale=2).to_pil()
+                                # OPTIMISATION DE LA VITESSE : scale passé de 2 à 1.3 (plus rapide et fluide)
+                                image = pdf_file[page_index].render(scale=1.3).to_pil()
                                 st.image(image, use_container_width=True)
                         except Exception:
                             st.error("Impossible d'afficher l'aperçu du PDF.")
