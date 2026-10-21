@@ -243,33 +243,25 @@ else:
                 )
 
             if voir_recette:
-                with st.spinner("Chargement de l'aperçu..."):
+                with st.spinner("Chargement de la recette..."):
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
                         try:
-                            pdf_file = pdfium.PdfDocument(res.content)
-                            for page_index in range(len(pdf_file)):
-                                image = pdf_file[page_index].render(scale=2).to_pil()
-                                
-                                # Encodage en base64 pour afficher l'image avec un lien d'agrandissement natif
-                                buffered = io.BytesIO()
-                                image.save(buffered, format="JPEG", quality=95)
-                                img_str = base64.b64encode(buffered.getvalue()).decode()
-                                
-                                html_viewer = f"""
-                                <div style="text-align: center; margin-bottom: 10px;">
-                                    <a href="data:image/jpeg;base64,{img_str}" target="_blank" style="display: inline-block; background-color: #6b2d18; color: white; padding: 8px 15px; border-radius: 5px; text-decoration: none; font-size: 14px; font-weight: bold; margin-bottom: 8px;">
-                                        🔍 Ouvrir l'image en grand (Plein écran / Zoom)
-                                    </a>
-                                </div>
-                                <div style="width: 100%; border: 1px solid #d9c5b2; border-radius: 8px; overflow: hidden; background: #fff;">
-                                    <img src="data:image/jpeg;base64,{img_str}" style="width: 100%; height: auto; display: block;" />
-                                </div>
-                                """
-                                st.markdown(html_viewer, unsafe_allow_html=True)
-                                
+                            # Encodage direct du PDF en base64 pour le lecteur natif du navigateur
+                            pdf_base64 = base64.b64encode(res.content).decode('utf-8')
+                            
+                            # Intégration via un iframe avec barre d'outils native (zoom, plein écran, défilement)
+                            pdf_display = f'''
+                            <div style="width: 100%; height: 750px; border: 1px solid #d9c5b2; border-radius: 8px; overflow: hidden; background: #fff; margin-top: 10px;">
+                                <iframe src="data:application/pdf;base64,{pdf_base64}#toolbar=1" width="100%" height="100%" type="application/pdf">
+                                    <p>Votre navigateur ne supporte pas l'affichage direct des PDF.</p>
+                                </iframe>
+                            </div>
+                            '''
+                            st.markdown(pdf_display, unsafe_allow_html=True)
+                            
                         except Exception as e:
-                            st.error(f"Impossible d'afficher l'aperçu du PDF. Erreur : {e}")
+                            st.error(f"Impossible d'afficher le PDF. Erreur : {e}")
                     else:
                         st.error("Erreur de récupération.")
 
