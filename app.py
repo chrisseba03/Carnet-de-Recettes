@@ -249,9 +249,24 @@ else:
                         try:
                             pdf_file = pdfium.PdfDocument(res.content)
                             for page_index in range(len(pdf_file)):
-                                # On remet une haute qualité (scale=2) et l'affichage natif Streamlit
                                 image = pdf_file[page_index].render(scale=2).to_pil()
-                                st.image(image, use_container_width=True)
+                                
+                                # Encodage en base64 pour afficher l'image avec un lien d'agrandissement natif
+                                buffered = io.BytesIO()
+                                image.save(buffered, format="JPEG", quality=95)
+                                img_str = base64.b64encode(buffered.getvalue()).decode()
+                                
+                                html_viewer = f"""
+                                <div style="text-align: center; margin-bottom: 10px;">
+                                    <a href="data:image/jpeg;base64,{img_str}" target="_blank" style="display: inline-block; background-color: #6b2d18; color: white; padding: 8px 15px; border-radius: 5px; text-decoration: none; font-size: 14px; font-weight: bold; margin-bottom: 8px;">
+                                        🔍 Ouvrir l'image en grand (Plein écran / Zoom)
+                                    </a>
+                                </div>
+                                <div style="width: 100%; border: 1px solid #d9c5b2; border-radius: 8px; overflow: hidden; background: #fff;">
+                                    <img src="data:image/jpeg;base64,{img_str}" style="width: 100%; height: auto; display: block;" />
+                                </div>
+                                """
+                                st.markdown(html_viewer, unsafe_allow_html=True)
                                 
                         except Exception as e:
                             st.error(f"Impossible d'afficher l'aperçu du PDF. Erreur : {e}")
