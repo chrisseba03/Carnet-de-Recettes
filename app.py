@@ -1,6 +1,5 @@
 import streamlit as st
 import io
-import base64
 import requests
 import unicodedata
 import re
@@ -243,25 +242,16 @@ else:
                 )
 
             if voir_recette:
-                with st.spinner("Chargement de la recette..."):
+                with st.spinner("Chargement de l'aperçu..."):
                     res = requests.get(download_url, headers=headers)
                     if res.status_code == 200:
                         try:
-                            # Encodage direct du PDF en base64 pour le lecteur natif du navigateur
-                            pdf_base64 = base64.b64encode(res.content).decode('utf-8')
-                            
-                            # Intégration via un iframe avec barre d'outils native (zoom, plein écran, défilement)
-                            pdf_display = f'''
-                            <div style="width: 100%; height: 750px; border: 1px solid #d9c5b2; border-radius: 8px; overflow: hidden; background: #fff; margin-top: 10px;">
-                                <iframe src="data:application/pdf;base64,{pdf_base64}#toolbar=1" width="100%" height="100%" type="application/pdf">
-                                    <p>Votre navigateur ne supporte pas l'affichage direct des PDF.</p>
-                                </iframe>
-                            </div>
-                            '''
-                            st.markdown(pdf_display, unsafe_allow_html=True)
-                            
-                        except Exception as e:
-                            st.error(f"Impossible d'afficher le PDF. Erreur : {e}")
+                            pdf_file = pdfium.PdfDocument(res.content)
+                            for page_index in range(len(pdf_file)):
+                                image = pdf_file[page_index].render(scale=1.3).to_pil()
+                                st.image(image, use_container_width=True)
+                        except Exception:
+                            st.error("Impossible d'afficher l'aperçu du PDF.")
                     else:
                         st.error("Erreur de récupération.")
 
