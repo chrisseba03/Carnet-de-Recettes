@@ -113,12 +113,33 @@ total_recettes = len(fichiers_pdf)
 categories_liste = ["Entrées", "Charcuteries", "Sauces", "Plat unique", "Viande", "Poisson", "Desserts", "Pâtes et pains", "Vins & Spiritueux", "Autres"]
 options_categories = ["Toutes"] + categories_liste
 
-# --- GESTION DE L'ÉTAT DU FILTRE ---
+# Gestion de l'état du filtre
 if "categorie_filtre" not in st.session_state:
     st.session_state.categorie_filtre = "Toutes"
 
-# --- BARRE LATÉRALE : RÉPARTITION CLIQUABLE (Placée AVANT le selectbox pour forcer l'état) ---
-st.sidebar.header("📊 Répartition (Cliquez pour filtrer)")
+# --- BARRE LATÉRALE : OPTIONS (EN HAUT) ---
+st.sidebar.header("⚙️ Options")
+
+index_actuel = options_categories.index(st.session_state.categorie_filtre) if st.session_state.categorie_filtre in options_categories else 0
+
+def update_from_selectbox():
+    st.session_state.categorie_filtre = st.session_state.select_box_filtre
+
+categorie_filtre = st.sidebar.selectbox(
+    "Filtrer par catégorie", 
+    options_categories, 
+    index=index_actuel,
+    key="select_box_filtre",
+    on_change=update_from_selectbox
+)
+
+if st.sidebar.button("🔄 Rafraîchir la liste"):
+    st.cache_data.clear()
+    st.rerun()
+
+# --- BARRE LATÉRALE : RÉPARTITION CLIQUABLE (EN DESSOUS) ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("📊 Répartition")
 stats_cat = {cat: 0 for cat in categories_liste}
 
 for f in fichiers_pdf:
@@ -136,38 +157,15 @@ for f in fichiers_pdf:
         for c in cats_du_fichier:
             stats_cat[c] += 1
 
-if st.sidebar.button(f"📚 Toutes ({total_recettes})", key="btn_toutes"):
-    st.session_state.categorie_filtre = "Toutes"
-    st.rerun()
+def set_filtre(cat):
+    st.session_state.categorie_filtre = cat
+
+if st.sidebar.button(f"📚 Toutes ({total_recettes})", key="btn_toutes", on_click=set_filtre, args=("Toutes",)):
+    pass
 
 for cat, count in stats_cat.items():
-    if st.sidebar.button(f"• {cat} : {count}", key=f"btn_cat_{cat}"):
-        st.session_state.categorie_filtre = cat
-        st.rerun()
-
-st.sidebar.markdown("---")
-
-# --- BARRE LATÉRALE : OPTIONS ---
-st.sidebar.header("⚙️ Options")
-
-# Le selectbox se cale directement sur st.session_state.categorie_filtre
-index_actuel = options_categories.index(st.session_state.categorie_filtre) if st.session_state.categorie_filtre in options_categories else 0
-
-categorie_filtre = st.sidebar.selectbox(
-    "Filtrer par catégorie", 
-    options_categories, 
-    index=index_actuel,
-    key="select_box_filtre"
-)
-
-# Si l'utilisateur change le selectbox manuellement, on met à jour la session
-if categorie_filtre != st.session_state.categorie_filtre:
-    st.session_state.categorie_filtre = categorie_filtre
-    st.rerun()
-
-if st.sidebar.button("🔄 Rafraîchir la liste"):
-    st.cache_data.clear()
-    st.rerun()
+    if st.sidebar.button(f"• {cat} : {count}", key=f"btn_cat_{cat}", on_click=set_filtre, args=(cat,)):
+        pass
 
 filtre_actif = st.session_state.categorie_filtre
 
